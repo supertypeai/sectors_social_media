@@ -205,8 +205,9 @@ class SocialImageRenderer:
 
     def _metric(self, draw, xy, label, value, width, accent=COLORS["orange"]):
         x, y = xy
-        self._card(draw, (x, y, x + width, y + 150), radius=22, fill="#ffffff", outline="#eeeeee", width=2)
-        draw.rounded_rectangle((x, y, x + 10, y + 150), radius=5, fill=accent)
+        metric_h = 170
+        self._card(draw, (x, y, x + width, y + metric_h), radius=22, fill="#ffffff", outline="#eeeeee", width=2)
+        draw.rounded_rectangle((x, y, x + 10, y + metric_h), radius=5, fill=accent)
         draw.text((x + 34, y + 28), label.upper(), font=font("Inter-Bold.ttf", 24), fill=COLORS["muted"])
         draw_wrapped(draw, (x + 34, y + 68), value, font("Inter-Bold.ttf", 38), COLORS["ink"], width - 58, 4, 2)
 
@@ -383,55 +384,71 @@ class SocialImageRenderer:
         w, h = image.size
         margin = int(w * 0.1)
 
-        # Main Card for Tier 1
-        card_y = 380
-        card_h = 950
-        self._card(draw, (margin, card_y, w - margin, card_y + card_h), radius=32, fill="#ffffff", outline="#eeeeee", width=2)
-        
-        # Accent Bar
         accent_color = COLORS["pink"] if "Insider Trading" in tags else COLORS["orange"]
-        draw.rounded_rectangle((margin, card_y, margin + 12, card_y + card_h), radius=8, fill=accent_color)
 
-        inner_margin = margin + 50
-        y = card_y + 50
+        y = 360
 
-        # Tickers / Tags at the top of the card
+        # Tickers at the top
         tickers_str = format_tickers(news.get("tickers") or news.get("ticker") or news.get("symbol") or "")
         tickers = [t.strip() for t in tickers_str.split("/") if t.strip()]
-        
-        curr_x = inner_margin
+
+        curr_x = margin
         if tickers:
             for ticker in tickers[:3]:
-                curr_x = self._chip(draw, (curr_x, y), ticker, fill=accent_color, text_fill=COLORS["white"], font_size=28)
-            if len(tickers) > 3:
-                self._chip(draw, (curr_x, y), f"+{len(tickers)-3}", fill="#f0f0f0", text_fill=COLORS["muted"], font_size=28)
+                curr_x = self._chip(draw, (curr_x, y), ticker, fill=accent_color, text_fill=COLORS["white"], font_size=32)
         else:
-            tag = tags[0] if tags else "Tier 1 News"
-            self._chip(draw, (curr_x, y), tag.upper(), fill=accent_color, text_fill=COLORS["white"], font_size=28)
+            tag = tags[0] if tags else "News"
+            self._chip(draw, (curr_x, y), tag.upper(), fill=accent_color, text_fill=COLORS["white"], font_size=32)
 
-        y += 85
-        
-        # Title
-        title = clean_title(news.get("title", "IDX News"))
-        title_fnt = fit_font(draw, title, w - margin - inner_margin - 40, 48, 38, bold=True)
-        y = draw_wrapped(draw, (inner_margin, y), title, title_fnt, COLORS["ink"], w - margin - inner_margin - 40, 12, 4)
-        
-        y += 20
-        
-        # Summary
+        y += 110
+
+        # Title - Very Bold and Large
+        title = clean_title(news.get("headline") or news.get("title", "IDX News"))
+        title_fnt = fit_font(draw, title, w - 2 * margin, 72, 48, bold=True)
+        title_y_start = y
+        y = draw_wrapped(draw, (margin, y), title, title_fnt, COLORS["ink"], w - 2 * margin, 18, 4)
+
+        y += 40
+        # Horizontal Separator
+        draw.line((margin, y, margin + 250, y), fill=accent_color, width=10)
+        y += 60
+
+        # Summary / Bullets
+        bullets = news.get("bullets")
         summary = news.get("summary") or news.get("description") or news.get("content") or news.get("body") or ""
-        if summary:
-            summary_fnt = font("Inter-Regular.ttf", 34)
-            draw_wrapped(draw, (inner_margin, y), summary, summary_fnt, COLORS["soft_ink"], w - margin - inner_margin - 40, 10, 12)
-        
-        # Footer of the card: Source
+
+        if bullets and isinstance(bullets, list):
+            summary_fnt = font("Inter-Regular.ttf", 38)
+            for bullet in bullets:
+                # Draw bullet point
+                draw.text((margin, y), "•", font=font("Inter-Bold.ttf", 38), fill=accent_color)
+                y = draw_wrapped(draw, (margin + 40, y), bullet, summary_fnt, COLORS["soft_ink"], w - 2 * margin - 40, 14, 3)
+                y += 20
+        elif summary:
+            # Available height for summary: from current y to near footer
+            available_h = (h - 240) - y
+            summary_size = 40
+            line_gap = 16
+            while summary_size > 18:
+                summary_fnt = font("Inter-Regular.ttf", summary_size)
+                lines = wrap_text(draw, summary, summary_fnt, w - 2 * margin)
+                total_h = len(lines) * (summary_size + line_gap)
+                if total_h <= available_h:
+                    break
+                summary_size -= 2
+                line_gap = max(4, line_gap - 2)
+            summary_fnt = font("Inter-Regular.ttf", summary_size)
+            y = draw_wrapped(draw, (margin, y), summary, summary_fnt, COLORS["soft_ink"], w - 2 * margin, line_gap)
+
+        # Draw Vertical Accent Bar on the left
+        draw.rounded_rectangle((margin - 35, title_y_start, margin - 15, y), radius=10, fill=accent_color)
+
+        # Footer Source
         source = source_label(news.get("source") or news.get("url"))
-        source_text = f"Source: {source}"
-        draw.text((inner_margin, card_y + card_h - 70), source_text, font=font("Inter-Regular.ttf", 26), fill=COLORS["muted"])
+        draw.text((margin, h - 210), f"Source: {source}", font=font("Inter-Regular.ttf", 28), fill=COLORS["muted"])
 
         slug = clean_slug(news.get("id") or news.get("symbol") or news.get("title") or "news")
         return self._save(image, filename or f"news_tier1_{slug}.png")
-
     def render_tier2_news_summary(self, news_rows, date_label, filename="news_tier2_summary.png"):
         image = self._open("IDX - News 1.png")
         draw = ImageDraw.Draw(image)

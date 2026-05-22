@@ -11,6 +11,7 @@ from .classification import (
 )
 from .data import DEFAULT_FILINGS_SINCE, fetch_filings, fetch_news, load_records
 from .render import SocialImageRenderer
+from .summarizer import NewsSummarizer
 
 
 def date_label(value=None):
@@ -31,6 +32,7 @@ def load_input(args, kind):
 
 def generate(args):
     renderer = SocialImageRenderer(output_dir=args.output)
+    summarizer = NewsSummarizer()
     paths = []
 
     if args.mode in {"filings-daily", "filings-context", "filings-tags"}:
@@ -61,6 +63,13 @@ def generate(args):
             if args.limit:
                 rows = rows[: args.limit]
             for news in rows:
+                # Optimize news for social media using LLM
+                title = news.get("title")
+                body = news.get("body") or news.get("summary") or news.get("description") or ""
+                if title and body:
+                    print(f"Optimizing: {title[:50]}...")
+                    optimized = summarizer.optimize_news(title, body)
+                    news.update(optimized)
                 paths.append(renderer.render_tier1_news(news))
         elif args.mode == "news-tier2":
             rows = df[df["tier"] == "Tier 2"].to_dict("records")
