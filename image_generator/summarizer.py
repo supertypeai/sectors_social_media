@@ -42,6 +42,45 @@ Original Body: {body}
             print(f"Summarization error: {e}")
             return {"headline": title, "bullets": [body[:100] + "..."]}
 
+    def summarize_filing_context(self, context):
+        prompt = f"""
+Summarize the following financial transaction context into a very short, punchy phrase of 2 to 5 words.
+Return ONLY the short phrase, nothing else.
+
+Context: {context}
+""".strip()
+        
+        try:
+            # We don't want JSON here, just plain text
+            endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
+            
+            payload = {
+                "system_instruction": {"parts": [{"text": "You are a concise financial editor."}]},
+                "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+                "generationConfig": {"temperature": 0.3},
+            }
+            
+            query = parse.urlencode({"key": self.api_key})
+            url = f"{endpoint}?{query}"
+
+            req = request.Request(
+                url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+
+            with request.urlopen(req, timeout=15) as res:
+                body = res.read().decode("utf-8")
+                data = json.loads(body)
+                summary = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                # Remove quotes if the LLM adds them
+                summary = summary.strip('"\'')
+                return summary
+        except Exception as e:
+            print(f"Context summarization error: {e}")
+            return context[:30] + "..."
+
     def _chat(self, prompt):
         endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
         

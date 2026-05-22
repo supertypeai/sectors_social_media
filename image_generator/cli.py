@@ -40,7 +40,16 @@ def generate(args):
 
         if args.mode == "filings-daily":
             filtered = filter_daily_filings(df, hours=args.hours)
-            paths.append(renderer.render_daily_filings(filtered.to_dict("records"), date_label(args.date_label)))
+            rows = filtered.to_dict("records")
+            if args.limit:
+                rows = rows[: args.limit]
+            
+            for row in rows:
+                title = row.get("title") or "Filing Transaction"
+                print(f"Summarizing context for: {title[:50]}...")
+                row["title_summarized"] = summarizer.summarize_filing_context(title)
+                
+            paths.append(renderer.render_daily_filings(rows, date_label(args.date_label)))
         elif args.mode == "filings-context":
             rows = group_context_filings(df)
             if args.limit:

@@ -1,14 +1,17 @@
 import ast
+from io import BytesIO
 from pathlib import Path
 from urllib.parse import urlparse
 
-from PIL import Image, ImageDraw, ImageFont
+import requests
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 BACKGROUND_DIR = ROOT_DIR / "background"
 OUTPUT_DIR = ROOT_DIR / "output"
-PERIWATCH_FONT_DIR = ROOT_DIR.parent / "periwatch_pdf_generator" / "api" / "asset" / "font"
+LOGO_CACHE_DIR = ROOT_DIR / "logos"
+FONT_DIR = ROOT_DIR / "font"
 
 COLORS = {
     "ink": "#2f3137",
@@ -26,7 +29,7 @@ COLORS = {
 
 def font(name="Inter-Bold.ttf", size=48):
     candidates = [
-        PERIWATCH_FONT_DIR / name,
+        FONT_DIR / name,
         Path("C:/Windows/Fonts/arialbd.ttf" if "Bold" in name else "C:/Windows/Fonts/arial.ttf"),
     ]
     for path in candidates:
@@ -87,17 +90,21 @@ def draw_wrapped(draw, xy, text, fnt, fill, max_width, line_gap=8, max_lines=Non
     return y
 
 
-def currency_idr(value):
+def currency(value):
     try:
         value = float(value)
     except Exception:
         return "-"
+    
     if abs(value) >= 1_000_000_000_000:
-        return f"IDR {value / 1_000_000_000_000:.1f}T"
+        val = value / 1_000_000_000_000
+        return f"IDR {val:,.2f}" + "T"
     if abs(value) >= 1_000_000_000:
-        return f"IDR {value / 1_000_000_000:.1f}B"
+        val = value / 1_000_000_000
+        return f"IDR {val:,.2f}" + "B"
     if abs(value) >= 1_000_000:
-        return f"IDR {value / 1_000_000:.1f}M"
+        val = value / 1_000_000
+        return f"IDR {val:,.2f}" + "M"
     return f"IDR {value:,.0f}"
 
 
@@ -172,6 +179,58 @@ class SocialImageRenderer:
         self.background_dir = Path(background_dir)
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        LOGO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+    def _logo(self, image, xy, symbol, size=100, accent=COLORS["pink"]):
+        # Clean symbol (remove .JK if present)
+        symbol = str(symbol).upper().split(".")[0]
+        x, y = xy
+        logo_path = LOGO_CACHE_DIR / f"{symbol}.webp"
+        
+        logo_img = None
+        if logo_path.exists():
+            try:
+                logo_img = Image.open(logo_path).convert("RGBA")
+            except Exception:
+                pass
+
+        if not logo_img:
+            url = f"https://storage.googleapis.com/sectorsapp/logo/{symbol}.webp"
+            try:
+                resp = requests.get(url, timeout=4)
+                if resp.status_code == 200:
+                    logo_img = Image.open(BytesIO(resp.content)).convert("RGBA")
+                    with open(logo_path, "wb") as f:
+                        f.write(resp.content)
+            except Exception:
+                pass
+
+        if logo_img:
+            # Resize and mask to circle
+            logo_img = ImageOps.fit(logo_img, (size, size), Image.Resampling.LANCZOS)
+            mask = Image.new("L", (size, size), 0)
+            draw_mask = ImageDraw.Draw(mask)
+            draw_mask.ellipse((0, 0, size, size), fill=255)
+            
+            circular_logo = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+            circular_logo.paste(logo_img, (0, 0), mask)
+            
+            # Draw a subtle border/background for the logo
+            draw = ImageDraw.Draw(image)
+            draw.ellipse((x, y, x + size, y + size), fill="#ffffff", outline="#eeeeee", width=1)
+            
+            image.paste(circular_logo, (x, y), circular_logo)
+        else:
+            # Fallback to symbol initials if logo not found
+            draw = ImageDraw.Draw(image)
+            draw.ellipse((x, y, x + size, y + size), fill="#f8f8f8", outline="#eeeeee", width=1)
+            symbol_char = symbol[:1].upper()
+            fnt = font("Inter-Bold.ttf", int(size * 0.48))
+            # Center the text
+            bbox = draw.textbbox((0, 0), symbol_char, font=fnt)
+            tw = bbox[2] - bbox[0]
+            th = bbox[3] - bbox[1]
+            draw.text((x + (size - tw) / 2, y + (size - th) / 2 - 5), symbol_char, font=fnt, fill=accent)
 
     def _open(self, template):
         return Image.open(self.background_dir / template).convert("RGBA")
@@ -220,76 +279,76 @@ class SocialImageRenderer:
         rows = list(filings)[:4]
         y = 360
         card_gap = 25
-        card_h = 320
+        card_h = 300  # Dipotong sedikit (dari 320)
 
         for i, row in enumerate(rows):
             is_buy = "buy" in str(row.get("title", "")).lower() or "purchase" in str(row.get("title", "")).lower()
             accent_color = COLORS["green"] if is_buy else COLORS["red"]
+            chip_bg = "#e6f4ea" if is_buy else "#fce8e8"
             
             # Card
             self._card(draw, (margin, y, w - margin, y + card_h), radius=24, fill="#ffffff", outline="#eeeeee", width=2)
             draw.rounded_rectangle((margin, y, margin + 10, y + card_h), radius=6, fill=accent_color)
 
-            # Logo Placeholder
+            # Logo (96)
             logo_x, logo_y = margin + 35, y + 35
-            draw.ellipse((logo_x, logo_y, logo_x + 100, logo_y + 100), fill="#f8f8f8", outline="#eeeeee", width=1)
             symbol_raw = str(row.get("symbol", "?"))
-            symbol_char = symbol_raw[:1]
-            draw.text((logo_x + 35, logo_y + 20), symbol_char, font=font("Inter-Bold.ttf", 48), fill=accent_color)
+            self._logo(image, (logo_x, logo_y), symbol_raw, size=96, accent=accent_color)
 
             # Content Area
             inner_x = logo_x + 130
             curr_y = y + 35
             
-            # Symbol & Status Chip
+            # Symbol & Status Chip (Symbol SemiBold)
             symbol_text = symbol_raw
-            symbol_fnt = font("Inter-Bold.ttf", 36)
+            symbol_fnt = font("Inter-SemiBold.ttf", 36)
             draw.text((inner_x, curr_y), symbol_text, font=symbol_fnt, fill=COLORS["ink"])
             
-            status_text = "BUY" if is_buy else "SELL"
+            status_text = "↗ BUY" if is_buy else "↘ SELL"
             chip_x = inner_x + draw.textlength(symbol_text, font=symbol_fnt) + 20
-            # Removed the + "22" which caused issues with hex colors
-            self._chip(draw, (chip_x, curr_y + 5), status_text, fill="#f0f0f0", text_fill=accent_color, font_size=24)
+            self._chip(draw, (chip_x, curr_y - 2), status_text, fill=chip_bg, text_fill=accent_color, font_size=24)
             
-            # Holder Name
+            # Holder Name (SemiBold, diperkecil 3 -> 25)
             curr_y += 55
             holder = row.get("holder_name") or "Individual/Institution"
-            draw.text((inner_x, curr_y), holder, font=font("Inter-Bold.ttf", 28), fill=COLORS["soft_ink"])
+            draw.text((inner_x, curr_y), holder, font=font("Inter-SemiBold.ttf", 25), fill=COLORS["soft_ink"])
             
-            # Title/Context
+            # Title/Context (Regular, 22)
             curr_y += 35
-            context = clean_title(row.get("title", "Filing Transaction"))
-            draw.text((inner_x, curr_y), context[:60] + ("..." if len(context) > 60 else ""), font=font("Inter-Regular.ttf", 24), fill=COLORS["muted"])
+            context = row.get("title_summarized") or clean_title(row.get("title", "Filing Transaction"))
+            draw.text((inner_x, curr_y), context[:60] + ("..." if len(context) > 60 else ""), font=font("Inter-Regular.ttf", 22), fill=COLORS["muted"])
 
-            # Value (Top Right)
+            # Value (Top Right, SemiBold, diperkecil 2: 32 -> 30, format suffix + titik ribuan)
             val_label = "Transaction Value"
-            val_text = currency_idr(row.get("transaction_value", 0))
+            raw_val = row.get("transaction_value", 0)
+            val_text = currency(raw_val)
+                
             draw.text((w - margin - 40 - draw.textlength(val_label, font=font("Inter-Regular.ttf", 22)), y + 35), val_label, font=font("Inter-Regular.ttf", 22), fill=COLORS["muted"])
-            draw.text((w - margin - 40 - draw.textlength(val_text, font=font("Inter-Bold.ttf", 38)), y + 65), val_text, font=font("Inter-Bold.ttf", 38), fill=COLORS["ink"])
+            draw.text((w - margin - 40 - draw.textlength(val_text, font=font("Inter-SemiBold.ttf", 30)), y + 65), val_text, font=font("Inter-SemiBold.ttf", 30), fill=COLORS["ink"])
 
-            # Divider
-            draw.line((inner_x, y + 175, w - margin - 40, y + 175), fill="#eeeeee", width=1)
+            # Divider (posisi disesuaikan dengan card_h baru)
+            draw.line((inner_x, y + 165, w - margin - 40, y + 165), fill="#acacac", width=1)
             
-            # Metadata Row
-            meta_y = y + 195
+            # Metadata Row (Medium, font diperkecil 4: 28 -> 24)
+            meta_y = y + 185
             col_w = (w - margin * 2 - 170) // 4
             
             metas = [
                 ("Shares (M)", f"{row.get('share_percentage_transaction', 0):.2f}"),
-                ("Price", currency_idr(row.get("price_transaction", 0))),
+                ("Price", currency(row.get("price_transaction", 0))),
                 ("Before", f"{row.get('share_percentage_before', 0):.2f}%"),
                 ("After", f"{row.get('share_percentage_after', 0):.2f}%")
             ]
             
             for j, (label, value) in enumerate(metas):
                 col_x = inner_x + (j * col_w)
-                draw.text((col_x, meta_y), label, font=font("Inter-Regular.ttf", 22), fill=COLORS["muted"])
-                draw.text((col_x, meta_y + 35), value, font=font("Inter-Bold.ttf", 28), fill=COLORS["ink"])
+                draw.text((col_x, meta_y), label, font=font("Inter-Regular.ttf", 20), fill=COLORS["muted"])
+                draw.text((col_x, meta_y + 35), value, font=font("Inter-Medium.ttf", 24), fill=COLORS["ink"])
                 
                 # Add tiny arrow for "After"
                 if label == "After":
                     arrow = "↗" if is_buy else "↘"
-                    draw.text((col_x + draw.textlength(value, font=font("Inter-Bold.ttf", 28)) + 10, meta_y + 35), arrow, font=font("Inter-Bold.ttf", 28), fill=accent_color)
+                    draw.text((col_x + draw.textlength(value, font=font("Inter-Medium.ttf", 24)) + 10, meta_y + 35), arrow, font=font("Inter-Medium.ttf", 24), fill=accent_color)
 
             y += card_h + card_gap
 
@@ -309,8 +368,12 @@ class SocialImageRenderer:
         self._badge(draw, (margin, 380), pattern.upper(), color, 30)
         
         # Title
-        title = f"{group.get('symbol')} {pattern}"
+        symbol = group.get('symbol', 'Ticker')
+        title = f"{symbol} {pattern}"
         draw_wrapped(draw, (margin, 490), title, font("Inter-Bold.ttf", 88), COLORS["ink"], w - 2 * margin, 12, 2)
+        
+        # Add Logo next to title or in a fixed position
+        self._logo(image, (w - margin - 120, 380), symbol, size=120, accent=color)
         
         # Context Card
         card_y = 680
@@ -330,7 +393,7 @@ class SocialImageRenderer:
         metric_w = (w - margin * 2 - 40) // 2
         
         self._metric(draw, (margin, y), "Transactions", str(group.get("count", 1)), metric_w, color)
-        self._metric(draw, (margin + metric_w + 40, y), "Latest Value", currency_idr(latest.get("transaction_value")), metric_w, COLORS["orange"])
+        self._metric(draw, (margin + metric_w + 40, y), "Latest Value", currency(latest.get("transaction_value")), metric_w, COLORS["orange"])
         
         y += 190
         self._metric(draw, (margin, y), "Ownership", f"{pct(latest.get('share_percentage_before'))} -> {pct(latest.get('share_percentage_after'))}", metric_w, COLORS["pink"])
@@ -353,6 +416,10 @@ class SocialImageRenderer:
         
         # Header Badge
         self._badge(draw, (margin, 380), str(important).upper(), accent_color, 30)
+
+        # Add Logo
+        symbol_raw = filing.get("symbol", "Ticker")
+        self._logo(image, (w - margin - 120, 380), symbol_raw, size=120, accent=accent_color)
         
         # Title
         title = clean_title(filing.get("title", "Important Filing"))
@@ -384,7 +451,7 @@ class SocialImageRenderer:
         self._metric(draw, (margin + metric_w + 40, y), "Holder", holder_short, metric_w, COLORS["muted"])
         
         y += 210
-        self._metric(draw, (margin, y), "Value", currency_idr(filing.get("transaction_value")), metric_w, COLORS["green"])
+        self._metric(draw, (margin, y), "Value", currency(filing.get("transaction_value")), metric_w, COLORS["green"])
         self._metric(draw, (margin + metric_w + 40, y), "Change", change_text, metric_w, COLORS["pink"])
             
         symbol = clean_slug(filing.get("symbol", "filing"))
