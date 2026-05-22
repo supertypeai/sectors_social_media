@@ -349,32 +349,66 @@ class SocialImageRenderer:
         tags = normalize_tags(filing.get("tags_parsed") or [])
         important = next((tag for tag in tags if tag.lower() in {"takeover", "mesop"}), tags[0] if tags else "Important Filing")
         
+        accent_color = COLORS["orange"] if important.lower() == "takeover" else COLORS["pink"] if important.lower() == "mesop" else COLORS["green"]
+        
         # Header Badge
-        self._badge(draw, (margin, 380), str(important).upper(), COLORS["orange"], 30)
+        self._badge(draw, (margin, 380), str(important).upper(), accent_color, 30)
         
         # Title
         title = clean_title(filing.get("title", "Important Filing"))
-        draw_wrapped(draw, (margin, 490), title, font("Inter-Bold.ttf", 68), COLORS["ink"], w - 2 * margin, 12, 3)
+        title_fnt = fit_font(draw, title, w - 2 * margin, 72, 48, bold=True)
+        y = draw_wrapped(draw, (margin, 490), title, title_fnt, COLORS["ink"], w - 2 * margin, 18, 4)
         
-        y = 780
-        facts = [
-            ("Ticker", filing.get("symbol", "-")),
-            ("Holder", filing.get("holder_name", "-")),
-            ("Value", currency_idr(filing.get("transaction_value"))),
-            ("Change", f"{pct(filing.get('share_percentage_before'))} -> {pct(filing.get('share_percentage_after'))}"),
-        ]
+        y += 40
+        # Horizontal Separator
+        draw.line((margin, y, margin + 250, y), fill=accent_color, width=10)
+        y += 60
         
-        for label, value in facts:
-            card_h = 130
-            self._card(draw, (margin, y, w - margin, y + card_h), radius=20, fill="#ffffff", outline="#eeeeee", width=2)
-            draw.rounded_rectangle((margin, y, margin + 8, y + card_h), radius=4, fill=COLORS["orange"])
-            
-            draw.text((margin + 40, y + 25), label.upper(), font=font("Inter-Bold.ttf", 22), fill=COLORS["muted"])
-            draw_wrapped(draw, (margin + 320, y + 22), value, font("Inter-Bold.ttf", 36), COLORS["ink"], w - margin - 360, 4, 2)
-            y += card_h + 20
+        # Body / Summary Text
+        summary = filing.get("body") or filing.get("summary") or filing.get("content") or ""
+        if summary:
+            summary_fnt = font("Inter-Regular.ttf", 38)
+            y = draw_wrapped(draw, (margin, y), summary, summary_fnt, COLORS["soft_ink"], w - 2 * margin, 14, 5)
+        
+        y += 60
+        
+        # 2x2 Facts Grid
+        metric_w = (w - margin * 2 - 40) // 2
+        
+        holder_name = filing.get("holder_name", "-")
+        holder_short = holder_name[:25] + ("..." if len(holder_name) > 25 else "")
+        
+        change_text = f"{pct(filing.get('share_percentage_before'))} -> {pct(filing.get('share_percentage_after'))}"
+        
+        self._metric(draw, (margin, y), "Ticker", filing.get("symbol", "-"), metric_w, accent_color)
+        self._metric(draw, (margin + metric_w + 40, y), "Holder", holder_short, metric_w, COLORS["muted"])
+        
+        y += 210
+        self._metric(draw, (margin, y), "Value", currency_idr(filing.get("transaction_value")), metric_w, COLORS["green"])
+        self._metric(draw, (margin + metric_w + 40, y), "Change", change_text, metric_w, COLORS["pink"])
             
         symbol = clean_slug(filing.get("symbol", "filing"))
         return self._save(image, filename or f"filing_tag_{symbol}_{clean_slug(important)}.png")
+
+    def _render_quick_stats(self, draw, xy, symbol, accent_color):
+        x, y = xy
+        w = 1080 - 2 * x
+        h = 110
+        self._card(draw, (x, y, x + w, y + h), radius=18, fill="#fdfdfd", outline="#eeeeee", width=2)
+        
+        # Placeholder stats
+        stats = [
+            ("SYMBOL", symbol),
+            ("MKT CAP", "IDR 4.2T"),
+            ("SECTOR", "Energy"),
+            ("P/E", "12.4x")
+        ]
+        
+        col_w = w // len(stats)
+        for i, (label, val) in enumerate(stats):
+            curr_x = x + (i * col_w) + 35
+            draw.text((curr_x, y + 25), label, font=font("Inter-Bold.ttf", 20), fill=COLORS["muted"])
+            draw.text((curr_x, y + 52), val, font=font("Inter-Bold.ttf", 30), fill=COLORS["ink"])
 
     def render_tier1_news(self, news, filename=None):
         tags = normalize_tags(news.get("tags_parsed") or [])
@@ -403,7 +437,8 @@ class SocialImageRenderer:
         y += 110
 
         # Title - Very Bold and Large
-        title = clean_title(news.get("headline") or news.get("title", "IDX News"))
+        title_raw = str(news.get("headline") or news.get("title", "IDX News"))
+        title = title_raw.replace("**", "")
         title_fnt = fit_font(draw, title, w - 2 * margin, 72, 48, bold=True)
         title_y_start = y
         y = draw_wrapped(draw, (margin, y), title, title_fnt, COLORS["ink"], w - 2 * margin, 18, 4)
@@ -420,13 +455,15 @@ class SocialImageRenderer:
         if bullets and isinstance(bullets, list):
             summary_fnt = font("Inter-Regular.ttf", 38)
             for bullet in bullets:
+                # Remove markdown from bullet point
+                clean_bullet = str(bullet).replace("**", "")
                 # Draw bullet point
                 draw.text((margin, y), "•", font=font("Inter-Bold.ttf", 38), fill=accent_color)
-                y = draw_wrapped(draw, (margin + 40, y), bullet, summary_fnt, COLORS["soft_ink"], w - 2 * margin - 40, 14, 3)
+                y = draw_wrapped(draw, (margin + 40, y), clean_bullet, summary_fnt, COLORS["soft_ink"], w - 2 * margin - 40, 14, 3)
                 y += 20
         elif summary:
-            # Available height for summary: from current y to near footer
-            available_h = (h - 240) - y
+            # Available height for summary: from current y to near stats bar
+            available_h = (h - 400) - y
             summary_size = 40
             line_gap = 16
             while summary_size > 18:
@@ -442,6 +479,9 @@ class SocialImageRenderer:
 
         # Draw Vertical Accent Bar on the left
         draw.rounded_rectangle((margin - 35, title_y_start, margin - 15, y), radius=10, fill=accent_color)
+
+        # Quick Stats Bar at the bottom
+        self._render_quick_stats(draw, (margin, h - 350), tickers[0] if tickers else "IDX", accent_color)
 
         # Footer Source
         source = source_label(news.get("source") or news.get("url"))
