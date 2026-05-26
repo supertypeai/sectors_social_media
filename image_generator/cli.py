@@ -1,6 +1,12 @@
 import argparse
+import os
 from datetime import datetime
 from pathlib import Path
+
+try:
+    from slack_sdk import WebClient
+except ImportError:
+    WebClient = None
 
 from .classification import (
     classify_news,
@@ -9,7 +15,7 @@ from .classification import (
     filter_tagged_filings,
     group_context_filings,
 )
-from .data import DEFAULT_FILINGS_SINCE, fetch_filings, fetch_news, load_records
+from .data import DEFAULT_FILINGS_SINCE, fetch_company_profiles, fetch_filings, fetch_news, load_records
 from .render import SocialImageRenderer
 from .summarizer import NewsSummarizer
 
@@ -32,6 +38,12 @@ def load_input(args, kind):
 
 def generate(args):
     renderer = SocialImageRenderer(output_dir=args.output)
+    try:
+        renderer.company_profiles = fetch_company_profiles()
+    except Exception as e:
+        print(f"Warning: Could not fetch company profiles: {e}")
+        renderer.company_profiles = {}
+        
     summarizer = NewsSummarizer()
     paths = []
 
@@ -76,18 +88,49 @@ def generate(args):
                 title = news.get("title")
                 body = news.get("body") or news.get("summary") or news.get("description") or ""
                 if title and body:
-                    print(f"Optimizing: {title[:50]}...")
+                    safe_title = title[:50].encode('ascii', 'ignore').decode()
+                    print(f"Optimizing: {safe_title}...")
                     optimized = summarizer.optimize_news(title, body)
                     news.update(optimized)
-                paths.append(renderer.render_tier1_news(news))
+                
+                path = renderer.render_tier1_news(news)
+                caption = f":chart_with_upwards_trend: *{news.get('headline', title)}*\n\n"
+                if news.get("bullets"):
+                    caption += "\n".join(f"• {b}" for b in news.get("bullets", [])) + "\n\n"
+                caption += "#IDX #StockMarket #Indonesia #Investing #FinancialData #SectorsApp"
+                paths.append((path, caption))
         elif args.mode == "news-tier2":
             rows = df[df["tier"] == "Tier 2"].to_dict("records")
             if args.limit:
                 rows = rows[: args.limit]
             paths.append(renderer.render_tier2_news_summary(rows, date_label(args.date_label)))
 
-    for path in paths:
-        print(Path(path).resolve())
+    slack_client = None
+    slack_token = os.getenv("SLACK_BOT_TOKEN")
+    if slack_token:
+        slack_token = slack_token.strip(' "''')
+    if getattr(args, "slack_channel", None) and slack_token and WebClient:
+        slack_client = WebClient(token=slack_token)
+
+    for item in paths:
+        if isinstance(item, tuple):
+            path, caption = item
+        else:
+            path, caption = item, f"New image generated: {Path(item).name}\n\n#IDX #StockMarket #Indonesia #SectorsApp"
+            
+        resolved = Path(path).resolve()
+        print(resolved)
+        
+        if slack_client:
+            print(f"Uploading {resolved.name} to Slack...")
+            try:
+                slack_client.files_upload_v2(
+                    channel=args.slack_channel,
+                    file=str(resolved),
+                    initial_comment=caption
+                )
+            except Exception as e:
+                print(f"Slack error: {e}")
 
 
 def build_parser():
@@ -109,6 +152,7 @@ def build_parser():
         default=DEFAULT_FILINGS_SINCE,
         help="Supabase idx_filings timestamp lower bound, matching the notebook default.",
     )
+    parser.add_argument("--slack-channel", help="Slack channel ID to post results to (requires SLACK_BOT_TOKEN).")
     return parser
 
 

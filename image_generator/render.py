@@ -3,6 +3,7 @@ from io import BytesIO
 from pathlib import Path
 from urllib.parse import urlparse
 
+import os
 import requests
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
@@ -90,7 +91,9 @@ def draw_wrapped(draw, xy, text, fnt, fill, max_width, line_gap=8, max_lines=Non
     return y
 
 
-def currency(value):
+def currency_idr(value):
+    if value is None or str(value).lower() in {"nan", "none", ""}:
+        return "-"
     try:
         value = float(value)
     except Exception:
@@ -98,13 +101,13 @@ def currency(value):
     
     if abs(value) >= 1_000_000_000_000:
         val = value / 1_000_000_000_000
-        return f"IDR {val:,.2f}" + "T"
+        return f"IDR {val:,.2f}T"
     if abs(value) >= 1_000_000_000:
         val = value / 1_000_000_000
-        return f"IDR {val:,.2f}" + "B"
+        return f"IDR {val:,.2f}B"
     if abs(value) >= 1_000_000:
         val = value / 1_000_000
-        return f"IDR {val:,.2f}" + "M"
+        return f"IDR {val:,.2f}M"
     return f"IDR {value:,.0f}"
 
 
@@ -180,6 +183,41 @@ class SocialImageRenderer:
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         LOGO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        self.company_profiles = {}
+
+    def _company(self, draw, image, xy, symbol, width, accent=COLORS["orange"]):
+        x, y = xy
+        card_h = 170
+        self._card(draw, (x, y, x + width, y + card_h), radius=22, fill="#ffffff", outline="#eeeeee", width=2)
+        draw.rounded_rectangle((x, y, x + 10, y + card_h), radius=5, fill=accent)
+        
+        # Header Label
+        draw.text((x + 34, y + 28), "COMPANY", font=font("Inter-Bold.ttf", 24), fill=COLORS["muted"])
+        
+        # Clean Ticker (no .JK)
+        clean_symbol = str(symbol).upper().split(".")[0]
+        
+        # Align with other metric values which are drawn at y + 68
+        content_y = y + 65
+        
+        # Logo inside card
+        logo_size = 68  # Reduced by 25% (from 90)
+        logo_y = content_y
+        self._logo(image, (x + 34, logo_y), clean_symbol, size=logo_size, accent=accent)
+        
+        # Symbol & Name next to logo
+        text_x = x + 34 + logo_size + 20
+        draw.text((text_x, content_y - 2), clean_symbol, font=font("Inter-SemiBold.ttf", 36), fill=COLORS["ink"])
+        
+        # Full Company Name from profiles
+        full_name = self.company_profiles.get(symbol) or self.company_profiles.get(clean_symbol) or "Public Company"
+        
+        # Implement wrapping for company name
+        name_fnt = font("Inter-Regular.ttf", 22)
+        name_x = text_x
+        name_y = content_y + 42
+        
+        draw_wrapped(draw, (name_x, name_y), full_name, name_fnt, COLORS["soft_ink"], width - (name_x - x) - 20, line_gap=4, max_lines=2)
 
     def _logo(self, image, xy, symbol, size=100, accent=COLORS["pink"]):
         # Clean symbol (remove .JK if present)
@@ -268,7 +306,16 @@ class SocialImageRenderer:
         self._card(draw, (x, y, x + width, y + metric_h), radius=22, fill="#ffffff", outline="#eeeeee", width=2)
         draw.rounded_rectangle((x, y, x + 10, y + metric_h), radius=5, fill=accent)
         draw.text((x + 34, y + 28), label.upper(), font=font("Inter-Bold.ttf", 24), fill=COLORS["muted"])
-        draw_wrapped(draw, (x + 34, y + 68), value, font("Inter-Bold.ttf", 38), COLORS["ink"], width - 58, 4, 2)
+        
+        # Scale font down if value is too long
+        val_fnt = font("Inter-Bold.ttf", 38)
+        if draw.textbbox((0, 0), value, font=val_fnt)[2] > width - 58:
+            val_fnt = fit_font(draw, value, width - 58, 38, min_size=20, bold=True)
+            
+        # Don't wrap value, just draw single line with ellipsize if needed
+        # Since it's a metric value, usually single line is better
+        val_text = ellipsize_to_width(draw, value, val_fnt, width - 58)
+        draw.text((x + 34, y + 68), val_text, font=val_fnt, fill=COLORS["ink"])
 
     def render_daily_filings(self, filings, date_label, filename="filings_daily.png"):
         image = self._open("News - Insider Trading.png")
@@ -321,7 +368,7 @@ class SocialImageRenderer:
             # Value (Top Right, SemiBold, diperkecil 2: 32 -> 30, format suffix + titik ribuan)
             val_label = "Transaction Value"
             raw_val = row.get("transaction_value", 0)
-            val_text = currency(raw_val)
+            val_text = currency_idr(raw_val)
                 
             draw.text((w - margin - 40 - draw.textlength(val_label, font=font("Inter-Regular.ttf", 22)), y + 35), val_label, font=font("Inter-Regular.ttf", 22), fill=COLORS["muted"])
             draw.text((w - margin - 40 - draw.textlength(val_text, font=font("Inter-SemiBold.ttf", 30)), y + 65), val_text, font=font("Inter-SemiBold.ttf", 30), fill=COLORS["ink"])
@@ -333,9 +380,12 @@ class SocialImageRenderer:
             meta_y = y + 185
             col_w = (w - margin * 2 - 170) // 4
             
+            # Price fallback
+            price_val = row.get("price")
+            
             metas = [
                 ("Shares (M)", f"{row.get('share_percentage_transaction', 0):.2f}"),
-                ("Price", currency(row.get("price_transaction", 0))),
+                ("Price", currency_idr(price_val)),
                 ("Before", f"{row.get('share_percentage_before', 0):.2f}%"),
                 ("After", f"{row.get('share_percentage_after', 0):.2f}%")
             ]
@@ -393,7 +443,7 @@ class SocialImageRenderer:
         metric_w = (w - margin * 2 - 40) // 2
         
         self._metric(draw, (margin, y), "Transactions", str(group.get("count", 1)), metric_w, color)
-        self._metric(draw, (margin + metric_w + 40, y), "Latest Value", currency(latest.get("transaction_value")), metric_w, COLORS["orange"])
+        self._metric(draw, (margin + metric_w + 40, y), "Latest Value", currency_idr(latest.get("transaction_value")), metric_w, COLORS["orange"])
         
         y += 190
         self._metric(draw, (margin, y), "Ownership", f"{pct(latest.get('share_percentage_before'))} -> {pct(latest.get('share_percentage_after'))}", metric_w, COLORS["pink"])
@@ -417,12 +467,8 @@ class SocialImageRenderer:
         # Header Badge
         self._badge(draw, (margin, 380), str(important).upper(), accent_color, 30)
 
-        # Add Logo
-        symbol_raw = filing.get("symbol", "Ticker")
-        self._logo(image, (w - margin - 120, 380), symbol_raw, size=120, accent=accent_color)
-        
         # Title
-        title = clean_title(filing.get("title", "Important Filing"))
+        title = clean_title(filing.get("headline") or filing.get("title", "Important Filing"))
         title_fnt = fit_font(draw, title, w - 2 * margin, 72, 48, bold=True)
         y = draw_wrapped(draw, (margin, 490), title, title_fnt, COLORS["ink"], w - 2 * margin, 18, 4)
         
@@ -447,12 +493,159 @@ class SocialImageRenderer:
         
         change_text = f"{pct(filing.get('share_percentage_before'))} -> {pct(filing.get('share_percentage_after'))}"
         
-        self._metric(draw, (margin, y), "Ticker", filing.get("symbol", "-"), metric_w, accent_color)
-        self._metric(draw, (margin + metric_w + 40, y), "Holder", holder_short, metric_w, COLORS["muted"])
+        # Insider Chart Logic (Supabase integration)
+        symbol_upper = str(filing.get("symbol", "")).upper()
+        chart_path = None
+        important_lower = str(important).lower()
+        print(f"DEBUG: symbol={symbol_upper}, important={important_lower}, value={filing.get('transaction_value', 0)}")
         
-        y += 210
-        self._metric(draw, (margin, y), "Value", currency(filing.get("transaction_value")), metric_w, COLORS["green"])
-        self._metric(draw, (margin + metric_w + 40, y), "Change", change_text, metric_w, COLORS["pink"])
+        if "insider" in important_lower or filing.get("transaction_value", 0) > 0 or True: # Force true for testing
+            try:
+                import io
+                import matplotlib.pyplot as plt
+                import matplotlib.dates as mdates
+                from datetime import datetime
+                
+                sb_url = os.getenv("SUPABASE_URL", "").rstrip("/")
+                sb_key = os.getenv("SUPABASE_KEY", "")
+                if not sb_url or not sb_key:
+                    try:
+                        from dotenv import load_dotenv
+                        load_dotenv()
+                        sb_url = os.getenv("SUPABASE_URL", "").rstrip("/")
+                        sb_key = os.getenv("SUPABASE_KEY", "")
+                    except ImportError:
+                        pass
+                
+                print(f"DEBUG: sb_url={sb_url[:10] if sb_url else None}, sb_key={'[SET]' if sb_key else '[UNSET]'}")
+                
+                if sb_url and sb_key:
+                    params = {
+                        "select": "date,close",
+                        "symbol": f"eq.{symbol_upper}",
+                        "order": "date.desc",
+                        "limit": "30"
+                    }
+                    headers = {
+                        "apikey": sb_key,
+                        "Authorization": f"Bearer {sb_key}"
+                    }
+                    r = requests.get(f"{sb_url}/rest/v1/idx_daily_data", params=params, headers=headers)
+                    print(f"DEBUG: Supabase daily data status={r.status_code}")
+                    if r.status_code == 200:
+                        rows = r.json()
+                        print(f"DEBUG: Retrieved {len(rows)} daily data rows")
+                        if rows:
+                            rows = sorted(rows, key=lambda x: x["date"])
+                            dates = [datetime.strptime(r["date"], "%Y-%m-%d") for r in rows]
+                            closes = [r["close"] for r in rows]
+
+                            first_close = closes[-1]
+                            last_close = closes[0]
+                            is_green = first_close > last_close
+
+                            GREEN = '#1B5E20'
+                            RED = '#8B1538'
+                            line_color = GREEN if is_green else RED
+
+                            fig, ax = plt.subplots(figsize=(10, 4))
+                            fig.patch.set_alpha(0.0)
+                            ax.patch.set_alpha(0.0)
+                            ax.plot(dates, closes, linewidth=2.5, color=line_color, zorder=3)
+
+                            # Annotation point fallback
+                            annot_date_str = filing.get("transaction_date") or str(filing.get("created_at", ""))[:10]
+                            annot_close = None
+                            annot_date = None
+                            
+                            print(f"DEBUG: annot_date_str={annot_date_str}")
+                            try:
+                                annot_date_dt = datetime.strptime(annot_date_str, "%Y-%m-%d")
+                                annot_close = next((r["close"] for r in rows if r["date"] == annot_date_str), None)
+                                if annot_close is None:
+                                    earlier = [r for r in rows if r["date"] <= annot_date_str]
+                                    if earlier:
+                                        nearest = max(earlier, key=lambda r: r["date"])
+                                        annot_close = nearest["close"]
+                                        annot_date_dt = datetime.strptime(nearest["date"], "%Y-%m-%d")
+                                annot_date = annot_date_dt
+                                print(f"DEBUG: resolved annot_date={annot_date}, annot_close={annot_close}")
+                            except Exception as e:
+                                print(f"DEBUG: Annotation date parsing error: {e}")
+
+                            if annot_date and annot_close:
+                                ax.scatter([annot_date], [annot_close], s=120, color=RED, zorder=4, edgecolors='white', linewidths=2)
+                                annot_text = f"{filing.get('holder_name', 'Insider')}\nIDR {filing.get('price', 0):,.0f}"
+                                ax.annotate(
+                                    annot_text,
+                                    xy=(annot_date, annot_close),
+                                    xytext=(-80, 30),
+                                    textcoords='offset points',
+                                    fontsize=10,
+                                    fontweight='bold',
+                                    color=RED,
+                                    bbox=dict(boxstyle='round,pad=0.5', facecolor='#FFF5E1', edgecolor="#FD9D38", linewidth=1.5, alpha=0.9),
+                                    arrowprops=dict(arrowstyle='->', connectionstyle='arc3,rad=0.3', color=RED, linewidth=1.5),
+                                    zorder=5
+                                )
+
+                            ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{int(x):,}'))
+                            ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %d'))
+                            ax.xaxis.set_major_locator(mdates.WeekdayLocator(interval=1))
+                            plt.setp(ax.xaxis.get_majorticklabels(), ha='right')
+
+                            for spine in ['top', 'right']: ax.spines[spine].set_visible(False)
+                            for spine in ['left', 'bottom']:
+                                ax.spines[spine].set_color('#999')
+                                ax.spines[spine].set_linewidth(1.5)
+                            ax.tick_params(colors='#666', which='both', labelsize=10)
+                            ax.grid(True, alpha=0.2, linestyle='--', color='#999')
+
+                            buf = io.BytesIO()
+                            plt.savefig(buf, format="png", dpi=120, bbox_inches="tight", transparent=True)
+                            buf.seek(0)
+                            chart_path = Image.open(buf).convert("RGBA")
+                            plt.close(fig)
+                            print("DEBUG: Chart generated successfully")
+            except Exception as e:
+                import traceback
+                print(f"Chart error for {symbol_upper}: {e}")
+                traceback.print_exc()
+
+        self._company(draw, image, (margin, y - 20), filing.get("symbol", "-"), metric_w, accent_color)
+        self._metric(draw, (margin + metric_w + 40, y - 20), "Holder", holder_short, metric_w, COLORS["muted"])
+        
+        y += 190 # Adjust spacing after first row of metrics (was y += 210 with unshifted y)
+        
+        self._metric(draw, (margin, y - 20), "Value", currency_idr(filing.get("transaction_value")), metric_w, COLORS["green"])
+        self._metric(draw, (margin + metric_w + 40, y - 20), "Change", change_text, metric_w, COLORS["pink"])
+        
+        # If chart exists, adjust layout or paste chart at bottom
+        if chart_path:
+            chart_w, chart_h = chart_path.size
+            
+            # Scale chart to fit exactly the available width (align left with title)
+            target_w = w - 2 * margin
+            ratio = target_w / float(chart_w)
+            chart_w = target_w
+            chart_h = int(chart_h * ratio)
+            chart_path = chart_path.resize((chart_w, chart_h), Image.Resampling.LANCZOS)
+                
+            # paste chart below metrics, starting slightly before margin to align inner plot
+            c_x = margin - 15
+            c_y = y + 200 # Place it just below the metrics
+            print(f"DEBUG: Pacing chart at y={c_y}, image total height={h}")
+            
+            # draw card behind chart (removed to allow true transparency against main background)
+            # self._card(draw, (margin, c_y, w - margin, c_y + chart_h + 20), radius=22, fill="#ffffff", outline="#eeeeee", width=2)
+            
+            # composite using alpha channel as mask
+            if chart_path.mode in ('RGBA', 'LA'):
+                image.paste(chart_path, (c_x, c_y + 10), chart_path)
+            else:
+                image.paste(chart_path, (c_x, c_y + 10))
+
+
             
         symbol = clean_slug(filing.get("symbol", "filing"))
         return self._save(image, filename or f"filing_tag_{symbol}_{clean_slug(important)}.png")

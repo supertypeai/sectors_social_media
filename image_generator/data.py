@@ -96,3 +96,8 @@ def fetch_filings(since=DEFAULT_FILINGS_SINCE):
 def fetch_news():
     df = fetch_supabase_table("idx_news")
     return _select_existing_columns(df, NEWS_COLUMNS)
+
+
+def fetch_company_profiles():
+    df = fetch_supabase_table("idx_company_profile", columns="symbol, company_name")
+    return df.set_index("symbol")["company_name"].to_dict()
