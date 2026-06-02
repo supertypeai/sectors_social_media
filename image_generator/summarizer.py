@@ -42,6 +42,35 @@ Original Body: {body}
             print(f"Summarization error: {e}")
             return {"headline": title, "bullets": [body[:100] + "..."]}
 
+    def optimize_dividend_news(self, title, body):
+        prompt = f"""
+You are an expert financial news editor analyzing a dividend announcement.
+Extract the key facts into a structured JSON format.
+
+Original Title: {title}
+Original Body: {body}
+
+Extract these specific data points. If a metric is NOT explicitly mentioned in the text, you MUST output "-" for that field to prevent hallucination.
+- "dividend_per_share": the dividend amount per share (e.g. 150)
+- "total_dividend": the total dividend pool amount, formatted as currency (e.g. "IDR 500B", or "-").
+- "cum_date": the cum-dividend date (e.g. "12 May 2026")
+- "profit_metric": only the absolute amount of the profit/revenue mentioned, formatted as currency (e.g. "IDR 1T" or "IDR 50B", or "-"). Do NOT include words like "Net Profit of".
+- "payout_ratio": the % of profit distributed (e.g. "50%")
+- "headline": a punchy 4-6 word headline (e.g. "BBCA Announces Mega Dividend")
+
+Return ONLY a valid JSON object matching these keys.
+""".strip()
+        
+        try:
+            response = self._chat(prompt)
+            json_match = re.search(r"\{.*\}", response, re.DOTALL)
+            if json_match:
+                return json.loads(json_match.group(0))
+            return {"headline": title}
+        except Exception as e:
+            print(f"Dividend extraction error: {e}")
+            return {"headline": title}
+
     def summarize_filing_context(self, context):
         prompt = f"""
 Summarize the following financial transaction context into a very short, punchy phrase of 2 to 5 words.

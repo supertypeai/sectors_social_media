@@ -1,11 +1,7 @@
 import json
 import os
 from pathlib import Path
-
 import pandas as pd
-
-
-DEFAULT_FILINGS_SINCE = "2026-05-01"
 
 FILINGS_COLUMNS = [
     "source",
@@ -80,24 +76,48 @@ def _select_existing_columns(df, columns):
     return df[existing_columns]
 
 
-def fetch_supabase_table(table_name, since_column=None, since_value=None, columns="*"):
+def fetch_supabase_table(table_name, since_column=None, since_value=None, columns="*", symbol_column=None, symbol_value=None, order_column=None, order_desc=True, limit=None):
     query = _supabase_client().table(table_name).select(columns)
     if since_column and since_value:
         query = query.gte(since_column, since_value)
+    if symbol_column and symbol_value:
+        query = query.eq(symbol_column, symbol_value)
+    if order_column:
+        query = query.order(order_column, desc=order_desc)
+    if limit:
+        query = query.limit(limit)
     response = query.execute()
     return pd.DataFrame(response.data)
 
+def fetch_dividend_history(symbol):
+    try:
+        df = fetch_supabase_table("idx_dividend", symbol_column="symbol", symbol_value=symbol, order_column="date", order_desc=True, limit=5)
+        if df.empty:
+            return []
+        return df.to_dict("records")
+    except Exception as e:
+        print(f"Error fetching dividend history for {symbol}: {e}")
+        return []
 
-def fetch_filings(since=DEFAULT_FILINGS_SINCE):
-    df = fetch_supabase_table("idx_filings", since_column="timestamp", since_value=since)
+
+def fetch_filings(since=None):
+    if since is None:
+        from datetime import datetime, timedelta
+        since = (datetime.now() - timedelta(hours=24)).isoformat()
+    df = fetch_supabase_table("idx_filings", since_column="created_at", since_value=since)
     return _select_existing_columns(df, FILINGS_COLUMNS)
 
 
-def fetch_news():
-    df = fetch_supabase_table("idx_news")
+def fetch_news(since=None):
+    if since is None:
+        from datetime import datetime, timedelta
+        since = (datetime.now() - timedelta(hours=24)).isoformat()
+    df = fetch_supabase_table("idx_news", since_column="created_at", since_value=since)
     return _select_existing_columns(df, NEWS_COLUMNS)
 
 
 def fetch_company_profiles():
     df = fetch_supabase_table("idx_company_profile", columns="symbol, company_name")
+    if df.empty:
+        return {}
     return df.set_index("symbol")["company_name"].to_dict()

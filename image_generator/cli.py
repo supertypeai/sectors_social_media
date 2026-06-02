@@ -14,8 +14,9 @@ from .classification import (
     filter_recent_news,
     filter_tagged_filings,
     group_context_filings,
+    group_tier1_news,
 )
-from .data import DEFAULT_FILINGS_SINCE, fetch_company_profiles, fetch_filings, fetch_news, load_records
+from .data import fetch_company_profiles, fetch_filings, fetch_news, load_records, fetch_dividend_history
 from .render import SocialImageRenderer
 from .summarizer import NewsSummarizer
 
@@ -80,25 +81,70 @@ def generate(args):
         if not args.all_news:
             df = filter_recent_news(df, hours=args.hours)
         if args.mode == "news-tier1":
-            rows = df[df["tier"] == "Tier 1"].to_dict("records")
+            groups = group_tier1_news(df)
             if args.limit:
-                rows = rows[: args.limit]
-            for news in rows:
-                # Optimize news for social media using LLM
-                title = news.get("title")
-                body = news.get("body") or news.get("summary") or news.get("description") or ""
-                if title and body:
-                    safe_title = title[:50].encode('ascii', 'ignore').decode()
-                    print(f"Optimizing: {safe_title}...")
-                    optimized = summarizer.optimize_news(title, body)
-                    news.update(optimized)
+                groups = groups[: args.limit]
+            for group in groups:
+                category = group["category"]
+                if category != "Dividend Announcement":
+                    continue
+                print(f"Processing category: {category}...")
                 
-                path = renderer.render_tier1_news(news)
-                caption = f":chart_with_upwards_trend: *{news.get('headline', title)}*\n\n"
-                if news.get("bullets"):
-                    caption += "\n".join(f"• {b}" for b in news.get("bullets", [])) + "\n\n"
-                caption += "#IDX #StockMarket #Indonesia #Investing #FinancialData #SectorsApp"
-                paths.append((path, caption))
+                for news in group["news"]:
+                    # Optimize news for social media using LLM
+                    title = news.get("title")
+                    body = news.get("body") or news.get("summary") or news.get("description") or ""
+                    
+                    if category == "Dividend Announcement" and title and body:
+                        safe_title = title[:50].encode('ascii', 'ignore').decode()
+                        print(f"Extracting dividend data for: {safe_title}...")
+                        extracted = summarizer.optimize_dividend_news(title, body)
+                        
+                        # Check how many metrics are missing ("-")
+                        missing_count = sum(1 for k in ["dividend_per_share", "total_dividend", "cum_date", "profit_metric", "payout_ratio"] if extracted.get(k, "-") == "-")
+                        
+                        if missing_count > 3:
+                            print(f"Skipping {safe_title} - too many missing metrics ({missing_count}/5)")
+                            # Mark for removal by setting a flag
+                            news["_skip_render"] = True
+                            continue
+                            
+                        news.update(extracted)
+                        # Fetch dividend history
+                        from .render import format_tickers
+                        tickers_str = format_tickers(news.get("tickers") or news.get("ticker") or news.get("symbol") or "")
+                        first_ticker = tickers_str.split("/")[0].strip() if tickers_str else None
+                        if first_ticker:
+                            # Try with and without .JK
+                            ticker_jk = first_ticker if first_ticker.endswith(".JK") else f"{first_ticker}.JK"
+                            news["dividend_history"] = fetch_dividend_history(ticker_jk)
+                    elif title and body:
+                        safe_title = title[:50].encode('ascii', 'ignore').decode()
+                        print(f"Optimizing: {safe_title}...")
+                        optimized = summarizer.optimize_news(title, body)
+                        news.update(optimized)
+                
+                
+                # Filter out skipped news
+                group["news"] = [n for n in group["news"] if not n.get("_skip_render")]
+                
+                if not group["news"]:
+                    print(f"Skipping {category} - no valid news left after filtering.")
+                    continue
+                
+                paths_created = renderer.render_tier1_news_group(group, date_label(args.date_label))
+                if isinstance(paths_created, str):
+                    paths_created = [paths_created]
+                
+                for path in paths_created:
+                    caption = f":chart_with_upwards_trend: *Notable {category} Updates*\n\n"
+                    for news in group["news"]:
+                        caption += f"*{news.get('headline', news.get('title'))}*\n"
+                        if news.get("bullets"):
+                            caption += "\n".join(f"• {b}" for b in news.get("bullets", [])) + "\n"
+                        caption += "\n"
+                    caption += "#IDX #StockMarket #Indonesia #Investing #FinancialData #SectorsApp"
+                    paths.append((path, caption))
         elif args.mode == "news-tier2":
             rows = df[df["tier"] == "Tier 2"].to_dict("records")
             if args.limit:
@@ -149,7 +195,6 @@ def build_parser():
     parser.add_argument("--all-news", action="store_true", help="Backfill all tiered news instead of filtering by --hours.")
     parser.add_argument(
         "--filings-since",
-        default=DEFAULT_FILINGS_SINCE,
         help="Supabase idx_filings timestamp lower bound, matching the notebook default.",
     )
     parser.add_argument("--slack-channel", help="Slack channel ID to post results to (requires SLACK_BOT_TOKEN).")
