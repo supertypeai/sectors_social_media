@@ -71,6 +71,34 @@ Return ONLY a valid JSON object matching these keys.
             print(f"Dividend extraction error: {e}")
             return {"headline": title}
 
+    def optimize_suspension_news(self, title, body):
+        prompt = f"""
+You are an expert financial news editor analyzing an IDX stock trading suspension announcement.
+Extract the key facts into a structured JSON format.
+
+Original Title: {title}
+Original Body: {body}
+
+Extract these specific data points. If a metric is NOT explicitly mentioned in the text, you MUST output "-" for that field to prevent hallucination.
+- "reason": short phrase explaining why trading was suspended (e.g. "Unusual Market Activity", "Pending Material Information", "Free Float Below 7.5%"). Max 5 words.
+- "effective_date": the date the suspension takes effect (e.g. "12 May 2026")
+- "last_price": the last traded price before suspension, formatted as currency (e.g. "IDR 1,250")
+- "expected_resumption": when trading is expected to resume (e.g. "Until Further Notice" or a specific date like "20 May 2026")
+- "headline": a punchy 4-6 word headline (e.g. "BBCA Trading Suspended by IDX")
+
+Return ONLY a valid JSON object matching these keys.
+""".strip()
+
+        try:
+            response = self._chat(prompt)
+            json_match = re.search(r"\{.*\}", response, re.DOTALL)
+            if json_match:
+                return json.loads(json_match.group(0))
+            return {"headline": title}
+        except Exception as e:
+            print(f"Suspension extraction error: {e}")
+            return {"headline": title}
+
     def summarize_filing_context(self, context):
         prompt = f"""
 Summarize the following financial transaction context into a very short, punchy phrase of 2 to 5 words.

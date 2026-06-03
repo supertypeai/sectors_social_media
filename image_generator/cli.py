@@ -21,6 +21,9 @@ from .render import SocialImageRenderer
 from .summarizer import NewsSummarizer
 
 
+SNAPSHOT_CATEGORIES = {"Dividend Announcement", "Suspension"}
+
+
 def date_label(value=None):
     if value:
         return value
@@ -86,43 +89,46 @@ def generate(args):
                 groups = groups[: args.limit]
             for group in groups:
                 category = group["category"]
-                if category != "Dividend Announcement":
+                if category not in SNAPSHOT_CATEGORIES:
                     continue
                 print(f"Processing category: {category}...")
-                
+
                 for news in group["news"]:
-                    # Optimize news for social media using LLM
                     title = news.get("title")
                     body = news.get("body") or news.get("summary") or news.get("description") or ""
-                    
-                    if category == "Dividend Announcement" and title and body:
-                        safe_title = title[:50].encode('ascii', 'ignore').decode()
+                    if not (title and body):
+                        continue
+
+                    safe_title = title[:50].encode('ascii', 'ignore').decode()
+
+                    if category == "Dividend Announcement":
                         print(f"Extracting dividend data for: {safe_title}...")
                         extracted = summarizer.optimize_dividend_news(title, body)
-                        
-                        # Check how many metrics are missing ("-")
+
                         missing_count = sum(1 for k in ["dividend_per_share", "total_dividend", "cum_date", "profit_metric", "payout_ratio"] if extracted.get(k, "-") == "-")
-                        
                         if missing_count > 3:
                             print(f"Skipping {safe_title} - too many missing metrics ({missing_count}/5)")
-                            # Mark for removal by setting a flag
                             news["_skip_render"] = True
                             continue
-                            
+
                         news.update(extracted)
-                        # Fetch dividend history
                         from .render import format_tickers
                         tickers_str = format_tickers(news.get("tickers") or news.get("ticker") or news.get("symbol") or "")
                         first_ticker = tickers_str.split("/")[0].strip() if tickers_str else None
                         if first_ticker:
-                            # Try with and without .JK
                             ticker_jk = first_ticker if first_ticker.endswith(".JK") else f"{first_ticker}.JK"
                             news["dividend_history"] = fetch_dividend_history(ticker_jk)
-                    elif title and body:
-                        safe_title = title[:50].encode('ascii', 'ignore').decode()
-                        print(f"Optimizing: {safe_title}...")
-                        optimized = summarizer.optimize_news(title, body)
-                        news.update(optimized)
+
+                    elif category == "Suspension":
+                        print(f"Extracting suspension data for: {safe_title}...")
+                        extracted = summarizer.optimize_suspension_news(title, body)
+
+                        if extracted.get("reason", "-") == "-" and extracted.get("effective_date", "-") == "-":
+                            print(f"Skipping {safe_title} - no reason or effective date extracted")
+                            news["_skip_render"] = True
+                            continue
+
+                        news.update(extracted)
                 
                 
                 # Filter out skipped news
