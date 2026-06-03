@@ -76,18 +76,38 @@ def _select_existing_columns(df, columns):
     return df[existing_columns]
 
 
-def fetch_supabase_table(table_name, since_column=None, since_value=None, columns="*", symbol_column=None, symbol_value=None, order_column=None, order_desc=True, limit=None):
+def fetch_supabase_table(
+    table_name: str,
+    since_column: str | None = None,
+    since_value=None,
+    columns: str = "*",
+    symbol_column: str | None = None,
+    symbol_value=None,
+    order_column: str | None = None,
+    order_desc: bool = True,
+    limit: int | None = None,
+    query_modifier=None,
+):
     query = _supabase_client().table(table_name).select(columns)
+
     if since_column and since_value:
         query = query.gte(since_column, since_value)
+
     if symbol_column and symbol_value:
         query = query.eq(symbol_column, symbol_value)
+
     if order_column:
         query = query.order(order_column, desc=order_desc)
+
     if limit:
         query = query.limit(limit)
+
+    if query_modifier is not None:
+        query = query_modifier(query)
+
     response = query.execute()
     return pd.DataFrame(response.data)
+
 
 def fetch_dividend_history(symbol):
     try:
@@ -121,3 +141,47 @@ def fetch_company_profiles():
     if df.empty:
         return {}
     return df.set_index("symbol")["company_name"].to_dict()
+
+
+def fetch_workflow_data(
+    columns: str,
+    table_name: str = "idx_workflow_data", 
+    is_output_json: bool = False, 
+    required_columns: list[str] = ['quarterly_low']
+) -> pd.DataFrame | list[dict]:
+    workflow_df = fetch_supabase_table(
+        table_name=table_name,
+        columns=columns,
+         query_modifier=lambda query: query.or_(
+            ",".join(f"{column_name}.not.is.null" for column_name in required_columns)
+        ),
+    )
+
+    if is_output_json:
+        return workflow_df.to_dict(orient="records")
+
+    return workflow_df
+
+
+def fetch_company_report():
+    company_report_df = fetch_supabase_table(
+        table_name="idx_company_report",
+        columns="symbol, market_cap",
+        query_modifier=lambda query: query.lte("market_cap_rank", 50),
+    )
+
+    return company_report_df
+
+
+def fetch_ihsg_weekly_data():
+    ihsg_df = fetch_supabase_table(
+        table_name="index_daily_data",
+        columns="date, index_code, price",
+        query_modifier=lambda query: query
+            .eq("index_code", "IHSG")
+            .order("date", desc=True)
+            .limit(6),
+    )
+
+    return ihsg_df.to_dict(orient="records")
+

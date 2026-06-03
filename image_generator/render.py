@@ -16,15 +16,23 @@ FONT_DIR = ROOT_DIR / "font"
 
 COLORS = {
     "ink": "#2f3137",
+    "dark": "#525564",
+    "heading": "#161624",
     "soft_ink": "#454852",
+    "label": "#a4a5b0",
     "muted": "#777b84",
     "faint": "#a4a8b0",
     "pink": "#ef5a78",
+    "orange_deep": "#f56550",
     "orange": "#f28a35",
     "green": "#1f9d6a",
+    "green_deep": "#269958",
     "red": "#d64a4a",
+    "red_deep": "#d74434",
     "line": "#ececec",
     "white": "#ffffff",
+    "off_white": "#f7f8fc",
+    "footer": "#5a5c6c"
 }
 
 
@@ -37,6 +45,13 @@ def font(name="Inter-Bold.ttf", size=48):
         if path.exists():
             return ImageFont.truetype(str(path), size=size)
     return ImageFont.load_default()
+
+
+def format_price(value: float) -> str:
+    if value >= 1000:
+        return f"{value:,.0f}".replace(",", ".")
+    
+    return str(int(value))
 
 
 def fit_font(draw, text, max_width, start_size, min_size=18, bold=True):
