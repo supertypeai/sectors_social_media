@@ -49,6 +49,20 @@ CATEGORY_COLORS = {
     "Insider Trading": COLORS["pink"],
 }
 
+# Rarer / more impactful tags first — picked when a news has multiple Tier 1 tags.
+CATEGORY_PRIORITY = [
+    "Suspension",
+    "Delisting",
+    "Trading Halt",
+    "Mergers & Acquisitions",
+    "IPO",
+    "Rights Issue",
+    "Stock Buyback",
+    "Stock Split",
+    "Dividend Announcement",
+    "Insider Trading",
+]
+
 
 def font(name="Inter-Bold.ttf", size=48):
     candidates = [
@@ -716,16 +730,19 @@ class SocialImageRenderer:
         draw.line((margin, y, w - margin, y), fill=COLORS["line"], width=3)
         y += 30
 
-        MAX_ROWS = 6
+        MAX_ROWS = 5
         rows = news_list[:MAX_ROWS]
         logo_size = 64
-        row_gap = 32
+        row_h = 130
 
         for news in rows:
             tags = news.get("tags_parsed") or []
             if not isinstance(tags, list):
                 tags = []
-            category = next((t for t in tags if t in CATEGORY_COLORS), "News")
+            tag_set = set(tags)
+            category = next((t for t in CATEGORY_PRIORITY if t in tag_set), None)
+            if category is None:
+                category = next((t for t in tags if t in CATEGORY_COLORS), "News")
             accent = CATEGORY_COLORS.get(category, COLORS["orange"])
 
             tickers_str = format_tickers(news.get("tickers") or news.get("ticker") or news.get("symbol") or "")
@@ -747,14 +764,14 @@ class SocialImageRenderer:
                     draw,
                     (right_x, y + 40),
                     headline,
-                    font("Inter-SemiBold.ttf", 26),
+                    font("Inter-SemiBold.ttf", 24),
                     COLORS["ink"],
                     w - right_x - margin,
                     line_gap=6,
                     max_lines=2,
                 )
 
-            y += logo_size + row_gap
+            y += row_h
 
         if len(news_list) > MAX_ROWS:
             more = f"+ {len(news_list) - MAX_ROWS} more updates"
