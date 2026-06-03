@@ -17,6 +17,10 @@ on:
           - filings-daily
           - filings-context
           - filings-tags
+      channel:
+        description: 'Slack channel/DM ID (paste U... for a DM to yourself, default = #visuals)'
+        required: false
+        default: 'C04RC79U5NK'
 
 jobs:
   generate_and_post:
@@ -47,4 +51,5 @@ jobs:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
         run: |
           MODE="${{ github.event.inputs.mode || 'news-tier1' }}"
-          python -m image_generator.cli --mode "$MODE" --slack-channel C04RC79U5NK --max-posts 3
+          CHANNEL="${{ github.event.inputs.channel || 'C04RC79U5NK' }}"
+          python -m image_generator.cli --mode "$MODE" --slack-channel "$CHANNEL" --max-posts 3

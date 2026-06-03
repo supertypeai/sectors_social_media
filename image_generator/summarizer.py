@@ -15,7 +15,7 @@ Return ONLY the requested format."""
 class NewsSummarizer:
     def __init__(self):
         self.api_key = os.getenv("GEMINI_API_KEY")
-        self.model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+        self.model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
         if not self.api_key:
             raise RuntimeError("GEMINI_API_KEY is required for news summarization.")
 

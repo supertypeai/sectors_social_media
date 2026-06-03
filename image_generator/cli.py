@@ -83,6 +83,8 @@ def generate(args):
         df = classify_news(load_input(args, "news"))
         if not args.all_news:
             df = filter_recent_news(df, hours=args.hours)
+        if not df.empty and "created_at" in df.columns:
+            print(f"After {args.hours}h filter: {len(df)} news rows, oldest={df['created_at'].min()}, newest={df['created_at'].max()}")
         if args.mode == "news-tier1":
             groups = group_tier1_news(df)
             if args.limit:
@@ -141,13 +143,12 @@ def generate(args):
                 pages = renderer.render_tier1_news_group(group, date_label(args.date_label))
 
                 for path, page_news in pages:
-                    caption = f":chart_with_upwards_trend: *Notable {category} Updates*\n\n"
-                    for news in page_news:
-                        caption += f"*{news.get('headline', news.get('title'))}*\n"
-                        if news.get("bullets"):
-                            caption += "\n".join(f"• {b}" for b in news.get("bullets", [])) + "\n"
-                        caption += "\n"
-                    caption += "#IDX #StockMarket #Indonesia #Investing #FinancialData #SectorsApp"
+                    caption = (
+                        f":chart_with_upwards_trend: *{len(page_news)} {category} update(s)* "
+                        f"— {date_label(args.date_label)}\n"
+                        f"See card for details.\n\n"
+                        "#IDX #StockMarket #Indonesia #Investing #FinancialData #SectorsApp"
+                    )
                     paths.append((path, caption))
         elif args.mode == "news-tier2":
             rows = df[df["tier"] == "Tier 2"].to_dict("records")
