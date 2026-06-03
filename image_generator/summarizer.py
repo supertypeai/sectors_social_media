@@ -71,6 +71,93 @@ Return ONLY a valid JSON object matching these keys.
             print(f"Dividend extraction error: {e}")
             return {"headline": title}
 
+    def optimize_rights_issue_news(self, title, body):
+        prompt = f"""
+You are an expert financial news editor analyzing an IDX rights issue announcement.
+Extract the key facts into a structured JSON format.
+
+Original Title: {title}
+Original Body: {body}
+
+Extract these specific data points. If a metric is NOT explicitly mentioned in the text, you MUST output "-" for that field to prevent hallucination. Stick strictly to the company named in the title — do not borrow numbers from other companies referenced in the body.
+- "issue_price": the exercise price per right, formatted as currency (e.g. "IDR 1,500")
+- "ratio": the rights ratio (e.g. "1:5" meaning 1 right per 5 existing shares)
+- "total_size": the total fundraising amount, formatted as currency (e.g. "IDR 3T", "IDR 500B")
+- "cum_date": the cum-rights / record date (e.g. "12 May 2026")
+- "use_of_funds": a short phrase for the intended use (e.g. "Debt repayment", "Expansion CAPEX"). Max 4 words.
+- "headline": a punchy 4-6 word headline (e.g. "BBCA Launches IDR 3T Rights Issue")
+
+Return ONLY a valid JSON object matching these keys.
+""".strip()
+
+        try:
+            response = self._chat(prompt)
+            json_match = re.search(r"\{.*\}", response, re.DOTALL)
+            if json_match:
+                return json.loads(json_match.group(0))
+            return {"headline": title}
+        except Exception as e:
+            print(f"Rights issue extraction error: {e}")
+            return {"headline": title}
+
+    def optimize_ipo_news(self, title, body):
+        prompt = f"""
+You are an expert financial news editor analyzing an IDX IPO (initial public offering) announcement.
+Extract the key facts into a structured JSON format.
+
+Original Title: {title}
+Original Body: {body}
+
+Extract these specific data points. If a metric is NOT explicitly mentioned in the text, you MUST output "-" for that field to prevent hallucination. Stick strictly to the company named in the title — do not borrow numbers from other companies referenced in the body.
+- "offer_price": the IPO offer price (e.g. "IDR 1,200" or a range like "IDR 1,000-1,200")
+- "offer_size": the offering size (e.g. "500M shares", "IDR 600B")
+- "listing_date": the planned listing date (e.g. "20 May 2026")
+- "market_cap": estimated market cap at offer, formatted as currency (e.g. "IDR 5T")
+- "use_of_funds": a short phrase for use of proceeds (e.g. "Working capital", "Debt repayment"). Max 4 words.
+- "headline": a punchy 4-6 word headline (e.g. "PT Sectors IPO Prices at IDR 1,200")
+
+Return ONLY a valid JSON object matching these keys.
+""".strip()
+
+        try:
+            response = self._chat(prompt)
+            json_match = re.search(r"\{.*\}", response, re.DOTALL)
+            if json_match:
+                return json.loads(json_match.group(0))
+            return {"headline": title}
+        except Exception as e:
+            print(f"IPO extraction error: {e}")
+            return {"headline": title}
+
+    def optimize_buyback_news(self, title, body):
+        prompt = f"""
+You are an expert financial news editor analyzing an IDX stock buyback announcement.
+Extract the key facts into a structured JSON format.
+
+Original Title: {title}
+Original Body: {body}
+
+Extract these specific data points. If a metric is NOT explicitly mentioned in the text, you MUST output "-" for that field to prevent hallucination. Stick strictly to the company named in the title — do not borrow numbers from other companies referenced in the body.
+- "budget": the total buyback budget/allocation, formatted as currency (e.g. "IDR 500B")
+- "max_price": the maximum buyback price ceiling per share (e.g. "IDR 1,500")
+- "shares_target": the target number of shares to repurchase (e.g. "100M shares")
+- "duration": the buyback program duration (e.g. "18 months")
+- "pct_outstanding": % of outstanding shares the target represents (e.g. "2.5%")
+- "headline": a punchy 4-6 word headline (e.g. "BBCA Approves IDR 500B Buyback")
+
+Return ONLY a valid JSON object matching these keys.
+""".strip()
+
+        try:
+            response = self._chat(prompt)
+            json_match = re.search(r"\{.*\}", response, re.DOTALL)
+            if json_match:
+                return json.loads(json_match.group(0))
+            return {"headline": title}
+        except Exception as e:
+            print(f"Buyback extraction error: {e}")
+            return {"headline": title}
+
     def optimize_suspension_news(self, title, body):
         prompt = f"""
 You are an expert financial news editor analyzing an IDX stock trading suspension announcement.

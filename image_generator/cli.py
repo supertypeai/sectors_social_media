@@ -21,7 +21,7 @@ from .render import SocialImageRenderer
 from .summarizer import NewsSummarizer
 
 
-SNAPSHOT_CATEGORIES = {"Dividend Announcement", "Suspension"}
+SNAPSHOT_CATEGORIES = {"Dividend Announcement", "Suspension", "Rights Issue", "IPO", "Stock Buyback"}
 
 
 def date_label(value=None):
@@ -131,6 +131,36 @@ def generate(args):
                             continue
 
                         news.update(extracted)
+
+                    elif category == "Rights Issue":
+                        print(f"Extracting rights issue data for: {safe_title}...")
+                        extracted = summarizer.optimize_rights_issue_news(title, body)
+                        missing_count = sum(1 for k in ["issue_price", "ratio", "total_size", "cum_date", "use_of_funds"] if extracted.get(k, "-") == "-")
+                        if missing_count > 3:
+                            print(f"Skipping {safe_title} - too many missing metrics ({missing_count}/5)")
+                            news["_skip_render"] = True
+                            continue
+                        news.update(extracted)
+
+                    elif category == "IPO":
+                        print(f"Extracting IPO data for: {safe_title}...")
+                        extracted = summarizer.optimize_ipo_news(title, body)
+                        missing_count = sum(1 for k in ["offer_price", "offer_size", "listing_date", "market_cap", "use_of_funds"] if extracted.get(k, "-") == "-")
+                        if missing_count > 3:
+                            print(f"Skipping {safe_title} - too many missing metrics ({missing_count}/5)")
+                            news["_skip_render"] = True
+                            continue
+                        news.update(extracted)
+
+                    elif category == "Stock Buyback":
+                        print(f"Extracting buyback data for: {safe_title}...")
+                        extracted = summarizer.optimize_buyback_news(title, body)
+                        missing_count = sum(1 for k in ["budget", "max_price", "shares_target", "duration", "pct_outstanding"] if extracted.get(k, "-") == "-")
+                        if missing_count > 3:
+                            print(f"Skipping {safe_title} - too many missing metrics ({missing_count}/5)")
+                            news["_skip_render"] = True
+                            continue
+                        news.update(extracted)
                 
                 
                 # Filter out skipped news
@@ -141,6 +171,7 @@ def generate(args):
                     continue
                 
                 pages = renderer.render_tier1_news_group(group, date_label(args.date_label))
+                pages = pages[:1]  # one paginated post per category per run; rest dropped to let other categories ship
 
                 for path, page_news in pages:
                     caption = (
