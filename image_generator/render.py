@@ -756,22 +756,22 @@ class SocialImageRenderer:
         pages = []
         for p_idx in range(0, len(news_list), cards_per_page):
             page_news = news_list[p_idx:p_idx + cards_per_page]
-            
-            image = self._open("News - Insider Trading.png")
+
+            image = self._open("IDX - News 1.png")
             draw = ImageDraw.Draw(image)
             w, h = image.size
             margin = int(w * 0.08)
 
             y = 330
             self._badge(draw, (margin, y), category.upper(), fill=accent_color, font_size=30)
-            
+
             # Add Pagination indicator if multiple pages
             if len(news_list) > cards_per_page:
                 page_num = (p_idx // cards_per_page) + 1
                 total_pages = (len(news_list) + cards_per_page - 1) // cards_per_page
                 page_text = f"Page {page_num} of {total_pages}"
                 draw.text((w - margin - draw.textlength(page_text, font=font("Inter-Bold.ttf", 24)), y + 10), page_text, font=font("Inter-Bold.ttf", 24), fill=COLORS["muted"])
-            
+
             y += 100
 
             title = "Dividend Announcements"
@@ -877,7 +877,7 @@ class SocialImageRenderer:
         for p_idx in range(0, len(news_list), cards_per_page):
             page_news = news_list[p_idx:p_idx + cards_per_page]
 
-            image = self._open("News - Insider Trading.png")
+            image = self._open("IDX - News 1.png")
             draw = ImageDraw.Draw(image)
             w, h = image.size
             margin = int(w * 0.08)
