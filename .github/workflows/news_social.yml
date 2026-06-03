@@ -1,9 +1,9 @@
 name: Generate and Post News
 
 on:
-  schedule:
-    # Run daily at 01:30 UTC (08:30 WIB)
-    - cron: '30 1 * * *'
+  # schedule:
+    # # Run daily at 01:30 UTC (08:30 WIB) — disabled until flooding fix is verified
+    # - cron: '30 1 * * *'
   workflow_dispatch:
     inputs:
       mode:
@@ -47,4 +47,4 @@ jobs:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
         run: |
           MODE="${{ github.event.inputs.mode || 'news-tier1' }}"
-          python -m image_generator.cli --mode "$MODE" --slack-channel C04RC79U5NK --limit 3
+          python -m image_generator.cli --mode "$MODE" --slack-channel C04RC79U5NK --limit 3 --max-posts 5

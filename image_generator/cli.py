@@ -138,13 +138,11 @@ def generate(args):
                     print(f"Skipping {category} - no valid news left after filtering.")
                     continue
                 
-                paths_created = renderer.render_tier1_news_group(group, date_label(args.date_label))
-                if isinstance(paths_created, str):
-                    paths_created = [paths_created]
-                
-                for path in paths_created:
+                pages = renderer.render_tier1_news_group(group, date_label(args.date_label))
+
+                for path, page_news in pages:
                     caption = f":chart_with_upwards_trend: *Notable {category} Updates*\n\n"
-                    for news in group["news"]:
+                    for news in page_news:
                         caption += f"*{news.get('headline', news.get('title'))}*\n"
                         if news.get("bullets"):
                             caption += "\n".join(f"• {b}" for b in news.get("bullets", [])) + "\n"
@@ -156,6 +154,17 @@ def generate(args):
             if args.limit:
                 rows = rows[: args.limit]
             paths.append(renderer.render_tier2_news_summary(rows, date_label(args.date_label)))
+
+    if args.max_posts and len(paths) > args.max_posts:
+        print(f"Capping output at {args.max_posts} posts (would have been {len(paths)})")
+        paths = paths[: args.max_posts]
+
+    if args.dry_run:
+        print(f"[dry-run] {len(paths)} post(s) generated, skipping Slack upload")
+        for item in paths:
+            path = item[0] if isinstance(item, tuple) else item
+            print(f"[dry-run] {Path(path).resolve()}")
+        return
 
     slack_client = None
     slack_token = os.getenv("SLACK_BOT_TOKEN")
@@ -197,7 +206,9 @@ def build_parser():
     parser.add_argument("--output", default="output", help="Output directory.")
     parser.add_argument("--date-label", help="Display date label, defaults to today.")
     parser.add_argument("--hours", type=int, default=24, help="Lookback window for daily filings and news.")
-    parser.add_argument("--limit", type=int, help="Maximum records to render for per-item modes.")
+    parser.add_argument("--limit", type=int, help="Maximum records to render for per-item modes (categories for news-tier1).")
+    parser.add_argument("--max-posts", type=int, default=5, help="Hard cap on total Slack posts emitted per run. Defaults to 5.")
+    parser.add_argument("--dry-run", action="store_true", help="Generate images but skip Slack upload.")
     parser.add_argument("--all-news", action="store_true", help="Backfill all tiered news instead of filtering by --hours.")
     parser.add_argument(
         "--filings-since",

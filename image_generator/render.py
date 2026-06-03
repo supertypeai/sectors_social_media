@@ -739,7 +739,8 @@ class SocialImageRenderer:
             y += 30
 
         slug = clean_slug(category)
-        return self._save(image, filename or f"news_tier1_group_{slug}.png")
+        saved = self._save(image, filename or f"news_tier1_group_{slug}.png")
+        return [(str(saved), news_list[:3])]
 
     def render_tier1_dividend_group(self, group, date_label, filename=None):
         category = group.get("category", "Dividend Announcement")
@@ -857,9 +858,9 @@ class SocialImageRenderer:
                 page_filename = f"{base}_p{(p_idx // cards_per_page) + 1}{ext}"
                 
             saved_path = self._save(image, page_filename)
-            pages.append(str(saved_path))
+            pages.append((str(saved_path), page_news))
 
-        return pages if len(pages) > 1 else (pages[0] if pages else None)
+        return pages
 
     def render_tier1_suspension_group(self, group, date_label, filename=None):
         category = group.get("category", "Suspension")
@@ -952,9 +953,9 @@ class SocialImageRenderer:
                 page_filename = f"{base}_p{(p_idx // cards_per_page) + 1}{ext}"
 
             saved_path = self._save(image, page_filename)
-            pages.append(str(saved_path))
+            pages.append((str(saved_path), page_news))
 
-        return pages if len(pages) > 1 else (pages[0] if pages else None)
+        return pages
 
     def render_tier1_news(self, news, filename=None):
         tags = normalize_tags(news.get("tags_parsed") or [])
