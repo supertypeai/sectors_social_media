@@ -2,11 +2,11 @@ name: Generate and Post Workflow
 
 on:
   schedule:
-    # Quarterly/weekly card: Monday 08:30 WIB = Sunday 01:30 UTC
-    - cron: '30 1 * * 0'
+    # Quarterly/weekly card: Monday 18:30 WIB = Monday 11:30 UTC
+    - cron: '30 11 * * 1'
 
-    # Top movers monthly card: first day of month 08:45 WIB = 01:45 UTC
-    - cron: '45 1 1 * *'
+    # Top movers monthly card: first day of month 18:45 WIB = 11:45 UTC
+    - cron: '45 11 1 * *'
 
   workflow_dispatch:
     inputs:
@@ -18,7 +18,7 @@ on:
         options:
           - quarterly
           - companies-mover
-          
+
       channel:
         description: 'Slack channel/DM ID, default = #visuals'
         required: false
@@ -53,11 +53,11 @@ jobs:
             echo "mode=${{ github.event.inputs.mode }}" >> "$GITHUB_OUTPUT"
             echo "channel=${{ github.event.inputs.channel || 'C04RC79U5NK' }}" >> "$GITHUB_OUTPUT"
           
-          elif [ "${{ github.event.schedule }}" = "30 1 * * 0" ]; then
+          elif [ "${{ github.event.schedule }}" = "30 11 * * 1" ]; then
             echo "mode=quarterly" >> "$GITHUB_OUTPUT"
             echo "channel=C04RC79U5NK" >> "$GITHUB_OUTPUT"
           
-          elif [ "${{ github.event.schedule }}" = "45 1 1 * *" ]; then
+          elif [ "${{ github.event.schedule }}" = "45 11 1 * *" ]; then
             echo "mode=companies-mover" >> "$GITHUB_OUTPUT"
             echo "channel=C04RC79U5NK" >> "$GITHUB_OUTPUT"
           
