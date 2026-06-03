@@ -171,8 +171,17 @@ def generate(args):
     slack_token = os.getenv("SLACK_BOT_TOKEN")
     if slack_token:
         slack_token = slack_token.strip(' "''')
-    if getattr(args, "slack_channel", None) and slack_token and WebClient:
+    target_channel = getattr(args, "slack_channel", None)
+    if target_channel and slack_token and WebClient:
         slack_client = WebClient(token=slack_token)
+        if target_channel.startswith("U"):
+            try:
+                resp = slack_client.conversations_open(users=target_channel)
+                target_channel = resp["channel"]["id"]
+                print(f"Resolved user {args.slack_channel} -> DM {target_channel}")
+            except Exception as e:
+                print(f"Could not open DM with {args.slack_channel}: {e}")
+                slack_client = None
 
     for item in paths:
         if isinstance(item, tuple):
@@ -187,7 +196,7 @@ def generate(args):
             print(f"Uploading {resolved.name} to Slack...")
             try:
                 slack_client.files_upload_v2(
-                    channel=args.slack_channel,
+                    channel=target_channel,
                     file=str(resolved),
                     initial_comment=caption
                 )
