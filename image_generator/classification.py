@@ -182,3 +182,40 @@ def filter_recent_news(df, now=None, hours=24):
         now = pd.Timestamp.now(tz="UTC")
     since = now - timedelta(hours=hours)
     return df[df["created_at"] >= since]
+
+
+def prepare_data_by_mcap(
+    df_workflow: pd.DataFrame, 
+    df_company_report: pd.DataFrame
+) -> list[dict]:
+    workflow_by_symbol = {
+        row["symbol"]: row
+        for row in df_workflow.to_dict(orient="records")
+    }
+
+    result = []
+    for company in df_company_report.to_dict(orient="records"):
+        symbol = company["symbol"]
+        
+        if symbol in workflow_by_symbol:
+            result.append(workflow_by_symbol[symbol])
+
+    return result
+
+
+def select_quarterly_data(
+    data_ihsg: list[dict], 
+    data_workflow: list[dict]
+) -> list[dict]: 
+    prices = [record.get('price') for record in data_ihsg]
+
+    price_today = prices[0]
+    price_last_week = prices[-1]
+
+    weekly_return = (price_today - price_last_week) / price_last_week
+
+    if weekly_return <= -0.02:
+        return [row for row in data_workflow if row.get("quarterly_low") is not None]
+    
+    return [row for row in data_workflow if row.get("quarterly_high") is not None]
+

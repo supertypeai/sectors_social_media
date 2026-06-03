@@ -16,7 +16,14 @@ from .classification import (
     group_context_filings,
     group_tier1_news,
 )
-from .data import fetch_company_profiles, fetch_filings, fetch_news, load_records, fetch_dividend_history
+from .data import (
+    fetch_company_profiles, 
+    fetch_filings, 
+    fetch_news, 
+    load_records,
+    fetch_dividend_history,
+)
+from .utils.slack import upload_posts_to_slack
 from .render import SocialImageRenderer
 from .summarizer import NewsSummarizer
 
@@ -198,41 +205,7 @@ def generate(args):
             print(f"[dry-run] {Path(path).resolve()}")
         return
 
-    slack_client = None
-    slack_token = os.getenv("SLACK_BOT_TOKEN")
-    if slack_token:
-        slack_token = slack_token.strip(' "''')
-    target_channel = getattr(args, "slack_channel", None)
-    if target_channel and slack_token and WebClient:
-        slack_client = WebClient(token=slack_token)
-        if target_channel.startswith("U"):
-            try:
-                resp = slack_client.conversations_open(users=target_channel)
-                target_channel = resp["channel"]["id"]
-                print(f"Resolved user {args.slack_channel} -> DM {target_channel}")
-            except Exception as e:
-                print(f"Could not open DM with {args.slack_channel}: {e}")
-                slack_client = None
-
-    for item in paths:
-        if isinstance(item, tuple):
-            path, caption = item
-        else:
-            path, caption = item, f"New image generated: {Path(item).name}\n\n#IDX #StockMarket #Indonesia #SectorsApp"
-            
-        resolved = Path(path).resolve()
-        print(resolved)
-        
-        if slack_client:
-            print(f"Uploading {resolved.name} to Slack...")
-            try:
-                slack_client.files_upload_v2(
-                    channel=target_channel,
-                    file=str(resolved),
-                    initial_comment=caption
-                )
-            except Exception as e:
-                print(f"Slack error: {e}")
+    upload_posts_to_slack(paths, slack_channel=args.slack_channel)
 
 
 def build_parser():
@@ -240,7 +213,15 @@ def build_parser():
     parser.add_argument(
         "--mode",
         required=True,
-        choices=["filings-daily", "filings-context", "filings-tags", "news-tier1", "news-tier2"],
+        choices=[
+            "filings-daily", 
+            "filings-context", 
+            "filings-tags", 
+            "news-tier1", 
+            "news-tier2",
+            "quarterly-low",
+            "companies-mover"
+        ],
         help="Content type to generate.",
     )
     parser.add_argument("--input", help="Optional CSV, JSON, or JSONL override for local QA. Supabase is used by default.")
@@ -266,3 +247,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# python -m image_generator.cli --mode companies-mover
+# python -m image_generator.cli --mode quarterly-low
