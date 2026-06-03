@@ -4,3 +4,4 @@ python-dotenv>=1.0
 supabase>=2.0
 slack_sdk>=3.0
 typer
+google-genai>=0.3

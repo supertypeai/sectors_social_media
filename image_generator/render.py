@@ -713,6 +713,16 @@ class SocialImageRenderer:
             draw.text((curr_x, y + 25), label, font=font("Inter-Bold.ttf", 20), fill=COLORS["muted"])
             draw.text((curr_x, y + 52), val, font=font("Inter-Bold.ttf", 30), fill=COLORS["ink"])
 
+    def _pick_category(self, news):
+        tags = news.get("tags_parsed") or []
+        if not isinstance(tags, list):
+            tags = []
+        tag_set = set(tags)
+        category = next((t for t in CATEGORY_PRIORITY if t in tag_set), None)
+        if category is None:
+            category = next((t for t in tags if t in CATEGORY_COLORS), "News")
+        return category
+
     def render_tier1_digest(self, news_list, date_label, filename=None):
         image = self._open("IDX - News 1.png")
         draw = ImageDraw.Draw(image)
@@ -724,30 +734,56 @@ class SocialImageRenderer:
         title_fnt = font("Inter-Bold.ttf", 64)
         y = draw_wrapped(draw, (margin, y), "Tier 1 IDX News", title_fnt, COLORS["ink"], w - 2 * margin, 18, 1)
         y += 10
-        draw.text((margin, y), date_label, font=font("Inter-Regular.ttf", 28), fill=COLORS["muted"])
+        draw.text((margin, y), f"{date_label} WIB", font=font("Inter-Regular.ttf", 28), fill=COLORS["muted"])
         y += 60
 
         draw.line((margin, y, w - margin, y), fill=COLORS["line"], width=3)
         y += 30
 
-        MAX_ROWS = 5
-        rows = news_list[:MAX_ROWS]
+        MAX_ROWS = 6
+        MAX_PER_CATEGORY = 2
         logo_size = 64
-        row_h = 130
+        ROW_H_SHORT = 130
+        ROW_H_TALL = 165
+
+        rows = []
+        cat_counts = {}
+        for news in news_list:
+            category = self._pick_category(news)
+            if cat_counts.get(category, 0) >= MAX_PER_CATEGORY:
+                continue
+            rows.append(news)
+            cat_counts[category] = cat_counts.get(category, 0) + 1
+            if len(rows) >= MAX_ROWS:
+                break
 
         for news in rows:
-            tags = news.get("tags_parsed") or []
-            if not isinstance(tags, list):
-                tags = []
-            tag_set = set(tags)
-            category = next((t for t in CATEGORY_PRIORITY if t in tag_set), None)
-            if category is None:
-                category = next((t for t in tags if t in CATEGORY_COLORS), "News")
+            category = self._pick_category(news)
             accent = CATEGORY_COLORS.get(category, COLORS["orange"])
 
             tickers_str = format_tickers(news.get("tickers") or news.get("ticker") or news.get("symbol") or "")
-            first_ticker = tickers_str.split("/")[0].strip() if tickers_str else "?"
-            self._logo(image, (margin, y), first_ticker, size=logo_size, accent=accent)
+            tickers = [t.strip() for t in tickers_str.split("/") if t.strip()]
+            extra_count = max(0, len(tickers) - 1)
+            is_multi = extra_count > 0
+            row_h = ROW_H_TALL if is_multi else ROW_H_SHORT
+
+            if tickers:
+                logo_symbol = tickers[0]
+            else:
+                title_words = str(news.get("title") or "").replace("PT ", "").split()
+                logo_symbol = title_words[0][:4].upper() if title_words else "?"
+
+            self._logo(image, (margin, y), logo_symbol, size=logo_size, accent=accent)
+
+            if is_multi:
+                badge_d = 32
+                badge_x = margin + logo_size - badge_d + 6
+                badge_y = y + logo_size - badge_d + 6
+                draw.ellipse((badge_x, badge_y, badge_x + badge_d, badge_y + badge_d), fill=COLORS["ink"], outline=COLORS["white"], width=2)
+                badge_fnt = font("Inter-Bold.ttf", 15)
+                badge_text = f"+{extra_count}"
+                tw = draw.textlength(badge_text, font=badge_fnt)
+                draw.text((badge_x + (badge_d - tw) / 2, badge_y + 7), badge_text, font=badge_fnt, fill=COLORS["white"])
 
             right_x = margin + logo_size + 20
 
@@ -771,11 +807,41 @@ class SocialImageRenderer:
                     max_lines=2,
                 )
 
+            if is_multi:
+                strip_y = y + 110
+                strip_x = right_x
+                strip_fnt = font("Inter-Bold.ttf", 13)
+                visible = tickers[:4]
+                hidden = len(tickers) - len(visible)
+                for ticker in visible:
+                    clean = ticker.split(".")[0]
+                    tw = draw.textlength(clean, font=strip_fnt)
+                    chip_w = tw + 16
+                    chip_height = 22
+                    draw.rounded_rectangle((strip_x, strip_y, strip_x + chip_w, strip_y + chip_height), radius=chip_height // 2, fill="#f0f0f0")
+                    draw.text((strip_x + 8, strip_y + 4), clean, font=strip_fnt, fill=COLORS["muted"])
+                    strip_x += chip_w + 6
+                if hidden > 0:
+                    more_text = f"+{hidden}"
+                    draw.text((strip_x + 4, strip_y + 4), more_text, font=strip_fnt, fill=COLORS["muted"])
+
             y += row_h
 
-        if len(news_list) > MAX_ROWS:
-            more = f"+ {len(news_list) - MAX_ROWS} more updates"
-            draw.text((margin, y), more, font=font("Inter-Regular.ttf", 22), fill=COLORS["muted"])
+        more_count = len(news_list) - len(rows)
+        if more_count > 0:
+            pill_text = f"+ {more_count} more updates"
+            pill_fnt = font("Inter-Regular.ttf", 20)
+            pill_text_w = draw.textlength(pill_text, font=pill_fnt)
+            pill_h = 32
+            draw.rounded_rectangle(
+                (margin, y + 8, margin + pill_text_w + 32, y + 8 + pill_h),
+                radius=pill_h // 2,
+                fill="#f0f0f0",
+            )
+            draw.text((margin + 16, y + 14), pill_text, font=pill_fnt, fill=COLORS["muted"])
+
+            note_fnt = font("Inter-Regular.ttf", 18)
+            draw.text((margin + pill_text_w + 48, y + 16), "from past 24h", font=note_fnt, fill=COLORS["faint"])
 
         saved = self._save(image, filename or "news_tier1_digest.png")
         return str(saved)
