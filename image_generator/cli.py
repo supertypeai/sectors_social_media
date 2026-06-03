@@ -14,21 +14,16 @@ from .classification import (
     filter_recent_news,
     filter_tagged_filings,
     group_context_filings,
-    group_tier1_news,
 )
 from .data import (
-    fetch_company_profiles, 
-    fetch_filings, 
-    fetch_news, 
+    fetch_company_profiles,
+    fetch_filings,
+    fetch_news,
     load_records,
-    fetch_dividend_history,
 )
 from .utils.slack import upload_posts_to_slack
 from .render import SocialImageRenderer
 from .summarizer import NewsSummarizer
-
-
-SNAPSHOT_CATEGORIES = {"Dividend Announcement", "Suspension", "Rights Issue", "IPO", "Stock Buyback"}
 
 
 def date_label(value=None):
@@ -93,101 +88,19 @@ def generate(args):
         if not df.empty and "created_at" in df.columns:
             print(f"After {args.hours}h filter: {len(df)} news rows, oldest={df['created_at'].min()}, newest={df['created_at'].max()}")
         if args.mode == "news-tier1":
-            groups = group_tier1_news(df)
+            rows = df[df["tier"] == "Tier 1"].sort_values("created_at", ascending=False).to_dict("records")
             if args.limit:
-                groups = groups[: args.limit]
-            for group in groups:
-                category = group["category"]
-                if category not in SNAPSHOT_CATEGORIES:
-                    continue
-                print(f"Processing category: {category}...")
-
-                for news in group["news"]:
-                    title = news.get("title")
-                    body = news.get("body") or news.get("summary") or news.get("description") or ""
-                    if not (title and body):
-                        continue
-
-                    safe_title = title[:50].encode('ascii', 'ignore').decode()
-
-                    if category == "Dividend Announcement":
-                        print(f"Extracting dividend data for: {safe_title}...")
-                        extracted = summarizer.optimize_dividend_news(title, body)
-
-                        missing_count = sum(1 for k in ["dividend_per_share", "total_dividend", "cum_date", "profit_metric", "payout_ratio"] if extracted.get(k, "-") == "-")
-                        if missing_count > 3:
-                            print(f"Skipping {safe_title} - too many missing metrics ({missing_count}/5)")
-                            news["_skip_render"] = True
-                            continue
-
-                        news.update(extracted)
-                        from .render import format_tickers
-                        tickers_str = format_tickers(news.get("tickers") or news.get("ticker") or news.get("symbol") or "")
-                        first_ticker = tickers_str.split("/")[0].strip() if tickers_str else None
-                        if first_ticker:
-                            ticker_jk = first_ticker if first_ticker.endswith(".JK") else f"{first_ticker}.JK"
-                            news["dividend_history"] = fetch_dividend_history(ticker_jk)
-
-                    elif category == "Suspension":
-                        print(f"Extracting suspension data for: {safe_title}...")
-                        extracted = summarizer.optimize_suspension_news(title, body)
-
-                        if extracted.get("reason", "-") == "-" and extracted.get("effective_date", "-") == "-":
-                            print(f"Skipping {safe_title} - no reason or effective date extracted")
-                            news["_skip_render"] = True
-                            continue
-
-                        news.update(extracted)
-
-                    elif category == "Rights Issue":
-                        print(f"Extracting rights issue data for: {safe_title}...")
-                        extracted = summarizer.optimize_rights_issue_news(title, body)
-                        missing_count = sum(1 for k in ["issue_price", "ratio", "total_size", "cum_date", "use_of_funds"] if extracted.get(k, "-") == "-")
-                        if missing_count > 3:
-                            print(f"Skipping {safe_title} - too many missing metrics ({missing_count}/5)")
-                            news["_skip_render"] = True
-                            continue
-                        news.update(extracted)
-
-                    elif category == "IPO":
-                        print(f"Extracting IPO data for: {safe_title}...")
-                        extracted = summarizer.optimize_ipo_news(title, body)
-                        missing_count = sum(1 for k in ["offer_price", "offer_size", "listing_date", "market_cap", "use_of_funds"] if extracted.get(k, "-") == "-")
-                        if missing_count > 3:
-                            print(f"Skipping {safe_title} - too many missing metrics ({missing_count}/5)")
-                            news["_skip_render"] = True
-                            continue
-                        news.update(extracted)
-
-                    elif category == "Stock Buyback":
-                        print(f"Extracting buyback data for: {safe_title}...")
-                        extracted = summarizer.optimize_buyback_news(title, body)
-                        missing_count = sum(1 for k in ["budget", "max_price", "shares_target", "duration", "pct_outstanding"] if extracted.get(k, "-") == "-")
-                        if missing_count > 3:
-                            print(f"Skipping {safe_title} - too many missing metrics ({missing_count}/5)")
-                            news["_skip_render"] = True
-                            continue
-                        news.update(extracted)
-                
-                
-                # Filter out skipped news
-                group["news"] = [n for n in group["news"] if not n.get("_skip_render")]
-                
-                if not group["news"]:
-                    print(f"Skipping {category} - no valid news left after filtering.")
-                    continue
-                
-                pages = renderer.render_tier1_news_group(group, date_label(args.date_label))
-                pages = pages[:1]  # one paginated post per category per run; rest dropped to let other categories ship
-
-                for path, page_news in pages:
-                    caption = (
-                        f":chart_with_upwards_trend: *{len(page_news)} {category} update(s)* "
-                        f"— {date_label(args.date_label)}\n"
-                        f"See card for details.\n\n"
-                        "#IDX #StockMarket #Indonesia #Investing #FinancialData #SectorsApp"
-                    )
-                    paths.append((path, caption))
+                rows = rows[: args.limit]
+            if rows:
+                print(f"Rendering Tier 1 digest with {len(rows)} item(s)")
+                path = renderer.render_tier1_digest(rows, date_label(args.date_label))
+                caption = (
+                    f":chart_with_upwards_trend: *Tier 1 IDX News — {date_label(args.date_label)}*\n\n"
+                    "#IDX #StockMarket #Indonesia #Investing #FinancialData #SectorsApp"
+                )
+                paths.append((path, caption))
+            else:
+                print("No Tier 1 news in window; skipping digest.")
         elif args.mode == "news-tier2":
             rows = df[df["tier"] == "Tier 2"].to_dict("records")
             if args.limit:

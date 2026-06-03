@@ -147,32 +147,6 @@ def classify_news(df):
     return df[df["tier"] != "Other"].sort_values(["tier", "created_at"], ascending=[True, False])
 
 
-def group_tier1_news(df):
-    if df.empty:
-        return []
-    
-    rows = df[df["tier"] == "Tier 1"].copy()
-    if rows.empty:
-        return []
-        
-    def get_tier1_category(tags_parsed):
-        for tag in tags_parsed:
-            if tag in TIER_1_NEWS_TAGS:
-                return tag
-        return "Other"
-        
-    rows["category"] = rows["tags_parsed"].apply(get_tier1_category)
-    groups = []
-    
-    for category, group in rows.groupby("category"):
-        groups.append({
-            "category": category,
-            "news": group.to_dict("records")
-        })
-        
-    return sorted(groups, key=lambda x: x["category"])
-
-
 def filter_recent_news(df, now=None, hours=24):
     if df.empty or "created_at" not in df.columns:
         return df

@@ -109,17 +109,6 @@ def fetch_supabase_table(
     return pd.DataFrame(response.data)
 
 
-def fetch_dividend_history(symbol):
-    try:
-        df = fetch_supabase_table("idx_dividend", symbol_column="symbol", symbol_value=symbol, order_column="date", order_desc=True, limit=5)
-        if df.empty:
-            return []
-        return df.to_dict("records")
-    except Exception as e:
-        print(f"Error fetching dividend history for {symbol}: {e}")
-        return []
-
-
 def fetch_filings(since=None):
     if since is None:
         from datetime import datetime, timedelta

@@ -1,4 +1,4 @@
-import ast
+﻿import ast
 from io import BytesIO
 from pathlib import Path
 from urllib.parse import urlparse
@@ -33,6 +33,20 @@ COLORS = {
     "white": "#ffffff",
     "off_white": "#f7f8fc",
     "footer": "#5a5c6c"
+}
+
+
+CATEGORY_COLORS = {
+    "Dividend Announcement": COLORS["green"],
+    "Stock Buyback": COLORS["green"],
+    "IPO": COLORS["green"],
+    "Rights Issue": COLORS["orange"],
+    "Stock Split": COLORS["orange"],
+    "Mergers & Acquisitions": COLORS["orange"],
+    "Suspension": COLORS["red"],
+    "Trading Halt": COLORS["red"],
+    "Delisting": COLORS["red"],
+    "Insider Trading": COLORS["pink"],
 }
 
 
@@ -366,7 +380,7 @@ class SocialImageRenderer:
             symbol_fnt = font("Inter-SemiBold.ttf", 36)
             draw.text((inner_x, curr_y), symbol_text, font=symbol_fnt, fill=COLORS["ink"])
             
-            status_text = "↗ BUY" if is_buy else "↘ SELL"
+            status_text = "â†— BUY" if is_buy else "â†˜ SELL"
             chip_x = inner_x + draw.textlength(symbol_text, font=symbol_fnt) + 20
             self._chip(draw, (chip_x, curr_y - 2), status_text, fill=chip_bg, text_fill=accent_color, font_size=24)
             
@@ -412,7 +426,7 @@ class SocialImageRenderer:
                 
                 # Add tiny arrow for "After"
                 if label == "After":
-                    arrow = "↗" if is_buy else "↘"
+                    arrow = "â†—" if is_buy else "â†˜"
                     draw.text((col_x + draw.textlength(value, font=font("Inter-Medium.ttf", 24)) + 10, meta_y + 35), arrow, font=font("Inter-Medium.ttf", 24), fill=accent_color)
 
             y += card_h + card_gap
@@ -685,502 +699,70 @@ class SocialImageRenderer:
             draw.text((curr_x, y + 25), label, font=font("Inter-Bold.ttf", 20), fill=COLORS["muted"])
             draw.text((curr_x, y + 52), val, font=font("Inter-Bold.ttf", 30), fill=COLORS["ink"])
 
-    def render_tier1_news_group(self, group, date_label, filename=None):
-        category = group.get("category", "Tier 1 News")
-        if category == "Dividend Announcement":
-            return self.render_tier1_dividend_group(group, date_label, filename)
-        if category == "Suspension":
-            return self.render_tier1_suspension_group(group, date_label, filename)
-        if category == "Rights Issue":
-            return self.render_tier1_rights_issue_group(group, date_label, filename)
-        if category == "IPO":
-            return self.render_tier1_ipo_group(group, date_label, filename)
-        if category == "Stock Buyback":
-            return self.render_tier1_buyback_group(group, date_label, filename)
-
-        news_list = group.get("news", [])
-        
-        template = "News - Insider Trading.png" if "Insider Trading" in category else "IDX - News 1.png"
-        image = self._open(template)
+    def render_tier1_digest(self, news_list, date_label, filename=None):
+        image = self._open("IDX - News 1.png")
         draw = ImageDraw.Draw(image)
         w, h = image.size
         margin = int(w * 0.08)
 
-        accent_color = COLORS["pink"] if "Insider Trading" in category else COLORS["orange"]
+        y = 330
 
-        y = 310
-
-        # Category Badge at the top
-        self._badge(draw, (margin, y), category.upper(), fill=accent_color, font_size=30)
-        
-        y += 100
-
-        # Group Title
-        title = f"Notable {category} Updates"
         title_fnt = font("Inter-Bold.ttf", 64)
-        y = draw_wrapped(draw, (margin, y), title, title_fnt, COLORS["ink"], w - 2 * margin, 18, 2)
-        
-        y += 30
-        draw.line((margin, y, margin + 250, y), fill=accent_color, width=8)
-        y += 50
-
-        # Render each news item
-        for i, news in enumerate(news_list[:3]):  # Max 3 items per group card
-            # Tickers for this item
-            tickers_str = format_tickers(news.get("tickers") or news.get("ticker") or news.get("symbol") or "")
-            tickers = [t.strip() for t in tickers_str.split("/") if t.strip()]
-            
-            if tickers:
-                curr_x = margin
-                
-                # Color cycle for cards to match tier 2 variety
-                accent_colors = [COLORS["orange"], COLORS["green"], COLORS["pink"], COLORS["red"]]
-                ticker_accent = accent_colors[i % len(accent_colors)]
-                
-                for ticker in tickers[:2]:
-                    curr_x = self._chip(draw, (curr_x, y), ticker, fill=ticker_accent, text_fill=COLORS["white"], font_size=22)
-                y += 50
-            
-            # Item Headline
-            headline = str(news.get("headline") or news.get("title", "News Update"))
-            headline_fnt = font("Inter-SemiBold.ttf", 36)
-            y = draw_wrapped(draw, (margin, y), headline, headline_fnt, COLORS["ink"], w - 2 * margin, 8, 2)
-            y += 20
-            
-            # Bullets
-            bullets = news.get("bullets")
-            if bullets and isinstance(bullets, list):
-                bullet_fnt = font("Inter-Regular.ttf", 28)
-                for bullet in bullets[:2]:  # max 2 bullets per item in group view
-                    clean_bullet = str(bullet).replace("**", "")
-                    draw.text((margin, y), "•", font=font("Inter-Bold.ttf", 28), fill=accent_color)
-                    y = draw_wrapped(draw, (margin + 30, y), clean_bullet, bullet_fnt, COLORS["soft_ink"], w - 2 * margin - 30, 8, 2)
-                    y += 10
-            
-            y += 30
-
-        slug = clean_slug(category)
-        saved = self._save(image, filename or f"news_tier1_group_{slug}.png")
-        return [(str(saved), news_list[:3])]
-
-    def render_tier1_dividend_group(self, group, date_label, filename=None):
-        category = group.get("category", "Dividend Announcement")
-        news_list = group.get("news", [])
-        
-        accent_color = COLORS["green"] # Dividends are good!
-        slug = clean_slug(category)
-        
-        cards_per_page = 3
-        card_gap = 40
-        card_h = 340
-        
-        pages = []
-        for p_idx in range(0, len(news_list), cards_per_page):
-            page_news = news_list[p_idx:p_idx + cards_per_page]
-
-            image = self._open("IDX - News 1.png")
-            draw = ImageDraw.Draw(image)
-            w, h = image.size
-            margin = int(w * 0.08)
-
-            y = 330
-            self._badge(draw, (margin, y), category.upper(), fill=accent_color, font_size=30)
-
-            # Add Pagination indicator if multiple pages
-            if len(news_list) > cards_per_page:
-                page_num = (p_idx // cards_per_page) + 1
-                total_pages = (len(news_list) + cards_per_page - 1) // cards_per_page
-                page_text = f"Page {page_num} of {total_pages}"
-                draw.text((w - margin - draw.textlength(page_text, font=font("Inter-Bold.ttf", 24)), y + 10), page_text, font=font("Inter-Bold.ttf", 24), fill=COLORS["muted"])
-
-            y += 100
-
-            title = "Dividend Announcements"
-            title_fnt = font("Inter-Bold.ttf", 64)
-            y = draw_wrapped(draw, (margin, y), title, title_fnt, COLORS["ink"], w - 2 * margin, 18, 2)
-            y += 30
-            draw.line((margin, y, margin + 250, y), fill=accent_color, width=8)
-            y += 60
-
-            for news in page_news:
-                self._card(draw, (margin, y, w - margin, y + card_h), radius=24, fill="#ffffff", outline="#eeeeee", width=2)
-                draw.rounded_rectangle((margin, y, margin + 10, y + card_h), radius=6, fill=accent_color)
-                
-                logo_x, logo_y = margin + 35, y + 35
-                tickers_str = format_tickers(news.get("tickers") or news.get("ticker") or news.get("symbol") or "")
-                first_ticker = tickers_str.split("/")[0].strip() if tickers_str else "?"
-                
-                self._logo(image, (logo_x, logo_y), first_ticker, size=96, accent=accent_color)
-                
-                inner_x = logo_x + 130
-                curr_y = y + 35
-                
-                # Headline
-                headline = str(news.get("headline") or news.get("title", "Dividend News"))
-                headline_fnt = font("Inter-SemiBold.ttf", 36)
-                draw.text((inner_x, curr_y), first_ticker, font=font("Inter-Bold.ttf", 36), fill=COLORS["ink"])
-                
-                curr_y += 50
-                draw_wrapped(draw, (inner_x, curr_y), headline, font("Inter-Regular.ttf", 26), COLORS["soft_ink"], w - margin - inner_x - 30, max_lines=2)
-                
-                # Dividend Data Grid
-                grid_y = y + 150
-                draw.line((inner_x, grid_y - 15, w - margin - 40, grid_y - 15), fill="#ececec", width=1)
-                
-                div_per_share = str(news.get("dividend_per_share") or "-")
-                cum_date = str(news.get("cum_date") or "-")
-                payout = str(news.get("payout_ratio") or "-")
-                total_div = str(news.get("total_dividend") or "-")
-                profit = str(news.get("profit_metric") or "-")
-                
-                metrics = [
-                    ("Div/Share", div_per_share if div_per_share.startswith("IDR") else f"IDR {div_per_share}"),
-                    ("Total Pool", total_div),
-                    ("Cum Date", cum_date),
-                    ("Net Profit", profit),
-                    ("Payout", payout)
-                ]
-                
-                col_w = (w - margin * 2 - 170) // 5
-                for j, (label, val) in enumerate(metrics):
-                    # Adjust font sizes for 5 columns so it doesn't look bizarre
-                    # Give slightly more room or break text if needed, but primarily use a fixed smaller baseline font
-                    col_x = inner_x + (j * col_w)
-                    draw.text((col_x, grid_y), label, font=font("Inter-Regular.ttf", 18), fill=COLORS["muted"])
-                    
-                    # Force a consistent, smaller font for 5 columns instead of huge difference
-                    val_fnt = font("Inter-Bold.ttf", 20)
-                    
-                    # Check length, scale font down strictly if needed
-                    if draw.textbbox((0, 0), val, font=val_fnt)[2] > col_w - 5:
-                        val_fnt = fit_font(draw, val, col_w - 5, 20, 14, bold=True)
-                        
-                    draw.text((col_x, grid_y + 35), val, font=val_fnt, fill=COLORS["ink"])
-                
-                # Historical Context Box inside card
-                hist = news.get("dividend_history", [])
-                if hist:
-                    hist_y = grid_y + 90
-                    draw.rounded_rectangle((inner_x, hist_y, w - margin - 40, hist_y + 70), radius=8, fill="#f8f9fa")
-                    draw.text((inner_x + 15, hist_y + 22), "HISTORICAL:", font=font("Inter-Bold.ttf", 18), fill=COLORS["muted"])
-                    
-                    hist_x = inner_x + 150
-                    for h_item in hist[:3]: # last 3 payments
-                        h_date = str(h_item.get("date", ""))[:4] # Just year
-                        h_val = h_item.get("dividend", 0)
-                        draw.text((hist_x, hist_y + 20), f"IDR {h_val} ({h_date})", font=font("Inter-Medium.ttf", 20), fill=COLORS["soft_ink"])
-                        hist_x += 200
-
-                y += card_h + card_gap
-                
-            page_filename = filename or f"news_tier1_group_{slug}.png"
-            if len(news_list) > cards_per_page:
-                base, ext = os.path.splitext(page_filename)
-                page_filename = f"{base}_p{(p_idx // cards_per_page) + 1}{ext}"
-                
-            saved_path = self._save(image, page_filename)
-            pages.append((str(saved_path), page_news))
-
-        return pages
-
-    def render_tier1_suspension_group(self, group, date_label, filename=None):
-        category = group.get("category", "Suspension")
-        news_list = group.get("news", [])
-
-        accent_color = COLORS["red"]
-        slug = clean_slug(category)
-
-        cards_per_page = 3
-        card_gap = 40
-        card_h = 340
-
-        pages = []
-        for p_idx in range(0, len(news_list), cards_per_page):
-            page_news = news_list[p_idx:p_idx + cards_per_page]
-
-            image = self._open("IDX - News 1.png")
-            draw = ImageDraw.Draw(image)
-            w, h = image.size
-            margin = int(w * 0.08)
-
-            y = 330
-            self._badge(draw, (margin, y), category.upper(), fill=accent_color, font_size=30)
-
-            if len(news_list) > cards_per_page:
-                page_num = (p_idx // cards_per_page) + 1
-                total_pages = (len(news_list) + cards_per_page - 1) // cards_per_page
-                page_text = f"Page {page_num} of {total_pages}"
-                draw.text((w - margin - draw.textlength(page_text, font=font("Inter-Bold.ttf", 24)), y + 10), page_text, font=font("Inter-Bold.ttf", 24), fill=COLORS["muted"])
-
-            y += 100
-
-            title = "Trading Suspensions"
-            title_fnt = font("Inter-Bold.ttf", 64)
-            y = draw_wrapped(draw, (margin, y), title, title_fnt, COLORS["ink"], w - 2 * margin, 18, 2)
-            y += 30
-            draw.line((margin, y, margin + 250, y), fill=accent_color, width=8)
-            y += 60
-
-            for news in page_news:
-                self._card(draw, (margin, y, w - margin, y + card_h), radius=24, fill="#ffffff", outline="#eeeeee", width=2)
-                draw.rounded_rectangle((margin, y, margin + 10, y + card_h), radius=6, fill=accent_color)
-
-                logo_x, logo_y = margin + 35, y + 35
-                tickers_str = format_tickers(news.get("tickers") or news.get("ticker") or news.get("symbol") or "")
-                first_ticker = tickers_str.split("/")[0].strip() if tickers_str else "?"
-
-                self._logo(image, (logo_x, logo_y), first_ticker, size=96, accent=accent_color)
-
-                inner_x = logo_x + 130
-                curr_y = y + 35
-
-                headline = str(news.get("headline") or news.get("title", "Trading Suspended"))
-                draw.text((inner_x, curr_y), first_ticker, font=font("Inter-Bold.ttf", 36), fill=COLORS["ink"])
-
-                curr_y += 50
-                draw_wrapped(draw, (inner_x, curr_y), headline, font("Inter-Regular.ttf", 26), COLORS["soft_ink"], w - margin - inner_x - 30, max_lines=2)
-
-                grid_y = y + 150
-                draw.line((inner_x, grid_y - 15, w - margin - 40, grid_y - 15), fill="#ececec", width=1)
-
-                reason = str(news.get("reason") or "-")
-                effective = str(news.get("effective_date") or "-")
-                last_price = str(news.get("last_price") or "-")
-                resumes = str(news.get("expected_resumption") or "-")
-
-                metrics = [
-                    ("Reason", reason),
-                    ("Effective", effective),
-                    ("Last Price", last_price),
-                    ("Resumes", resumes),
-                ]
-
-                col_w = (w - margin * 2 - 170) // 4
-                for j, (label, val) in enumerate(metrics):
-                    col_x = inner_x + (j * col_w)
-                    draw.text((col_x, grid_y), label, font=font("Inter-Regular.ttf", 18), fill=COLORS["muted"])
-
-                    val_fnt = font("Inter-Bold.ttf", 20)
-                    if draw.textbbox((0, 0), val, font=val_fnt)[2] > col_w - 5:
-                        val_fnt = fit_font(draw, val, col_w - 5, 20, 14, bold=True)
-
-                    draw.text((col_x, grid_y + 35), val, font=val_fnt, fill=COLORS["ink"])
-
-                y += card_h + card_gap
-
-            page_filename = filename or f"news_tier1_group_{slug}.png"
-            if len(news_list) > cards_per_page:
-                base, ext = os.path.splitext(page_filename)
-                page_filename = f"{base}_p{(p_idx // cards_per_page) + 1}{ext}"
-
-            saved_path = self._save(image, page_filename)
-            pages.append((str(saved_path), page_news))
-
-        return pages
-
-    def _render_tier1_metric_group(self, group, date_label, accent_color, title, metric_keys, filename=None):
-        category = group.get("category", title)
-        news_list = group.get("news", [])
-        slug = clean_slug(category)
-
-        cards_per_page = 3
-        card_gap = 40
-        card_h = 340
-
-        pages = []
-        for p_idx in range(0, len(news_list), cards_per_page):
-            page_news = news_list[p_idx:p_idx + cards_per_page]
-
-            image = self._open("IDX - News 1.png")
-            draw = ImageDraw.Draw(image)
-            w, h = image.size
-            margin = int(w * 0.08)
-
-            y = 330
-            self._badge(draw, (margin, y), category.upper(), fill=accent_color, font_size=30)
-
-            if len(news_list) > cards_per_page:
-                page_num = (p_idx // cards_per_page) + 1
-                total_pages = (len(news_list) + cards_per_page - 1) // cards_per_page
-                page_text = f"Page {page_num} of {total_pages}"
-                draw.text((w - margin - draw.textlength(page_text, font=font("Inter-Bold.ttf", 24)), y + 10), page_text, font=font("Inter-Bold.ttf", 24), fill=COLORS["muted"])
-
-            y += 100
-
-            title_fnt = font("Inter-Bold.ttf", 64)
-            y = draw_wrapped(draw, (margin, y), title, title_fnt, COLORS["ink"], w - 2 * margin, 18, 2)
-            y += 30
-            draw.line((margin, y, margin + 250, y), fill=accent_color, width=8)
-            y += 60
-
-            for news in page_news:
-                self._card(draw, (margin, y, w - margin, y + card_h), radius=24, fill="#ffffff", outline="#eeeeee", width=2)
-                draw.rounded_rectangle((margin, y, margin + 10, y + card_h), radius=6, fill=accent_color)
-
-                logo_x, logo_y = margin + 35, y + 35
-                tickers_str = format_tickers(news.get("tickers") or news.get("ticker") or news.get("symbol") or "")
-                first_ticker = tickers_str.split("/")[0].strip() if tickers_str else "?"
-
-                self._logo(image, (logo_x, logo_y), first_ticker, size=96, accent=accent_color)
-
-                inner_x = logo_x + 130
-                curr_y = y + 35
-
-                headline = str(news.get("headline") or news.get("title", "Update"))
-                draw.text((inner_x, curr_y), first_ticker, font=font("Inter-Bold.ttf", 36), fill=COLORS["ink"])
-                curr_y += 50
-                draw_wrapped(draw, (inner_x, curr_y), headline, font("Inter-Regular.ttf", 26), COLORS["soft_ink"], w - margin - inner_x - 30, max_lines=2)
-
-                grid_y = y + 150
-                draw.line((inner_x, grid_y - 15, w - margin - 40, grid_y - 15), fill="#ececec", width=1)
-
-                metrics = [(label, str(news.get(key) or "-")) for label, key in metric_keys]
-                ncols = len(metrics)
-                col_w = (w - margin * 2 - 170) // ncols
-                for j, (label, val) in enumerate(metrics):
-                    col_x = inner_x + (j * col_w)
-                    draw.text((col_x, grid_y), label, font=font("Inter-Regular.ttf", 18), fill=COLORS["muted"])
-                    val_fnt = font("Inter-Bold.ttf", 20)
-                    if draw.textbbox((0, 0), val, font=val_fnt)[2] > col_w - 5:
-                        val_fnt = fit_font(draw, val, col_w - 5, 20, 14, bold=True)
-                    draw.text((col_x, grid_y + 35), val, font=val_fnt, fill=COLORS["ink"])
-
-                y += card_h + card_gap
-
-            page_filename = filename or f"news_tier1_group_{slug}.png"
-            if len(news_list) > cards_per_page:
-                base, ext = os.path.splitext(page_filename)
-                page_filename = f"{base}_p{(p_idx // cards_per_page) + 1}{ext}"
-
-            saved_path = self._save(image, page_filename)
-            pages.append((str(saved_path), page_news))
-
-        return pages
-
-    def render_tier1_rights_issue_group(self, group, date_label, filename=None):
-        return self._render_tier1_metric_group(
-            group, date_label,
-            accent_color=COLORS["orange"],
-            title="Rights Issues",
-            metric_keys=[
-                ("Issue Price", "issue_price"),
-                ("Ratio", "ratio"),
-                ("Size", "total_size"),
-                ("Cum Date", "cum_date"),
-                ("Use of Funds", "use_of_funds"),
-            ],
-            filename=filename,
-        )
-
-    def render_tier1_ipo_group(self, group, date_label, filename=None):
-        return self._render_tier1_metric_group(
-            group, date_label,
-            accent_color=COLORS["green"],
-            title="New IPO Listings",
-            metric_keys=[
-                ("Offer Price", "offer_price"),
-                ("Offer Size", "offer_size"),
-                ("Listing", "listing_date"),
-                ("Market Cap", "market_cap"),
-                ("Use of Funds", "use_of_funds"),
-            ],
-            filename=filename,
-        )
-
-    def render_tier1_buyback_group(self, group, date_label, filename=None):
-        return self._render_tier1_metric_group(
-            group, date_label,
-            accent_color=COLORS["green"],
-            title="Stock Buybacks",
-            metric_keys=[
-                ("Budget", "budget"),
-                ("Max Price", "max_price"),
-                ("Shares", "shares_target"),
-                ("Duration", "duration"),
-                ("% Outstanding", "pct_outstanding"),
-            ],
-            filename=filename,
-        )
-
-    def render_tier1_news(self, news, filename=None):
-        tags = normalize_tags(news.get("tags_parsed") or [])
-        template = "News - Insider Trading.png" if "Insider Trading" in tags else "IDX - News 1.png"
-        image = self._open(template)
-        draw = ImageDraw.Draw(image)
-        w, h = image.size
-        margin = int(w * 0.1)
-
-        accent_color = COLORS["pink"] if "Insider Trading" in tags else COLORS["orange"]
-
-        y = 360
-
-        # Tickers at the top
-        tickers_str = format_tickers(news.get("tickers") or news.get("ticker") or news.get("symbol") or "")
-        tickers = [t.strip() for t in tickers_str.split("/") if t.strip()]
-
-        curr_x = margin
-        if tickers:
-            for ticker in tickers[:3]:
-                curr_x = self._chip(draw, (curr_x, y), ticker, fill=accent_color, text_fill=COLORS["white"], font_size=32)
-        else:
-            tag = tags[0] if tags else "News"
-            self._chip(draw, (curr_x, y), tag.upper(), fill=accent_color, text_fill=COLORS["white"], font_size=32)
-
-        y += 110
-
-        # Title - Very Bold and Large
-        title_raw = str(news.get("headline") or news.get("title", "IDX News"))
-        title = title_raw.replace("**", "")
-        title_fnt = fit_font(draw, title, w - 2 * margin, 72, 48, bold=True)
-        title_y_start = y
-        y = draw_wrapped(draw, (margin, y), title, title_fnt, COLORS["ink"], w - 2 * margin, 18, 4)
-
-        y += 40
-        # Horizontal Separator
-        draw.line((margin, y, margin + 250, y), fill=accent_color, width=10)
+        y = draw_wrapped(draw, (margin, y), "Tier 1 IDX News", title_fnt, COLORS["ink"], w - 2 * margin, 18, 1)
+        y += 10
+        draw.text((margin, y), date_label, font=font("Inter-Regular.ttf", 28), fill=COLORS["muted"])
         y += 60
 
-        # Summary / Bullets
-        bullets = news.get("bullets")
-        summary = news.get("summary") or news.get("description") or news.get("content") or news.get("body") or ""
+        draw.line((margin, y, w - margin, y), fill=COLORS["line"], width=3)
+        y += 30
 
-        if bullets and isinstance(bullets, list):
-            summary_fnt = font("Inter-Regular.ttf", 38)
-            for bullet in bullets:
-                # Remove markdown from bullet point
-                clean_bullet = str(bullet).replace("**", "")
-                # Draw bullet point
-                draw.text((margin, y), "•", font=font("Inter-Bold.ttf", 38), fill=accent_color)
-                y = draw_wrapped(draw, (margin + 40, y), clean_bullet, summary_fnt, COLORS["soft_ink"], w - 2 * margin - 40, 14, 3)
-                y += 20
-        elif summary:
-            # Available height for summary: from current y to near stats bar
-            available_h = (h - 400) - y
-            summary_size = 40
-            line_gap = 16
-            while summary_size > 18:
-                summary_fnt = font("Inter-Regular.ttf", summary_size)
-                lines = wrap_text(draw, summary, summary_fnt, w - 2 * margin)
-                total_h = len(lines) * (summary_size + line_gap)
-                if total_h <= available_h:
-                    break
-                summary_size -= 2
-                line_gap = max(4, line_gap - 2)
-            summary_fnt = font("Inter-Regular.ttf", summary_size)
-            y = draw_wrapped(draw, (margin, y), summary, summary_fnt, COLORS["soft_ink"], w - 2 * margin, line_gap)
+        MAX_ROWS = 6
+        rows = news_list[:MAX_ROWS]
+        logo_size = 64
+        row_gap = 32
 
-        # Draw Vertical Accent Bar on the left
-        draw.rounded_rectangle((margin - 35, title_y_start, margin - 15, y), radius=10, fill=accent_color)
+        for news in rows:
+            tags = news.get("tags_parsed") or []
+            if not isinstance(tags, list):
+                tags = []
+            category = next((t for t in tags if t in CATEGORY_COLORS), "News")
+            accent = CATEGORY_COLORS.get(category, COLORS["orange"])
 
-        # Quick Stats Bar at the bottom
-        self._render_quick_stats(draw, (margin, h - 350), tickers[0] if tickers else "IDX", accent_color)
+            tickers_str = format_tickers(news.get("tickers") or news.get("ticker") or news.get("symbol") or "")
+            first_ticker = tickers_str.split("/")[0].strip() if tickers_str else "?"
+            self._logo(image, (margin, y), first_ticker, size=logo_size, accent=accent)
 
-        # Footer Source
-        source = source_label(news.get("source") or news.get("url"))
-        draw.text((margin, h - 210), f"Source: {source}", font=font("Inter-Regular.ttf", 28), fill=COLORS["muted"])
+            right_x = margin + logo_size + 20
 
-        slug = clean_slug(news.get("id") or news.get("symbol") or news.get("title") or "news")
-        return self._save(image, filename or f"news_tier1_{slug}.png")
+            chip_fnt = font("Inter-Bold.ttf", 18)
+            chip_text = category.upper()
+            chip_text_w = draw.textlength(chip_text, font=chip_fnt)
+            chip_h = 26
+            draw.rounded_rectangle((right_x, y + 2, right_x + chip_text_w + 24, y + 2 + chip_h), radius=chip_h // 2, fill=accent)
+            draw.text((right_x + 12, y + 5), chip_text, font=chip_fnt, fill=COLORS["white"])
+
+            headline = str(news.get("title") or "").strip()
+            if headline:
+                draw_wrapped(
+                    draw,
+                    (right_x, y + 40),
+                    headline,
+                    font("Inter-SemiBold.ttf", 26),
+                    COLORS["ink"],
+                    w - right_x - margin,
+                    line_gap=6,
+                    max_lines=2,
+                )
+
+            y += logo_size + row_gap
+
+        if len(news_list) > MAX_ROWS:
+            more = f"+ {len(news_list) - MAX_ROWS} more updates"
+            draw.text((margin, y), more, font=font("Inter-Regular.ttf", 22), fill=COLORS["muted"])
+
+        saved = self._save(image, filename or "news_tier1_digest.png")
+        return str(saved)
+
     def render_tier2_news_summary(self, news_rows, date_label, filename="news_tier2_summary.png"):
         image = self._open("IDX - News 1.png")
         draw = ImageDraw.Draw(image)
