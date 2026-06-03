@@ -207,7 +207,7 @@ def build_parser():
     parser.add_argument("--date-label", help="Display date label, defaults to today.")
     parser.add_argument("--hours", type=int, default=24, help="Lookback window for daily filings and news.")
     parser.add_argument("--limit", type=int, help="Maximum records to render for per-item modes (categories for news-tier1).")
-    parser.add_argument("--max-posts", type=int, default=5, help="Hard cap on total Slack posts emitted per run. Defaults to 5.")
+    parser.add_argument("--max-posts", type=int, default=3, help="Hard cap on total Slack posts emitted per run. Defaults to 3.")
     parser.add_argument("--dry-run", action="store_true", help="Generate images but skip Slack upload.")
     parser.add_argument("--all-news", action="store_true", help="Backfill all tiered news instead of filtering by --hours.")
     parser.add_argument(
