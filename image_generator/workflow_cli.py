@@ -1,10 +1,12 @@
 from pathlib import Path
 
 from .classification import prepare_data_by_mcap, select_quarterly_data
-from .data import fetch_company_report, fetch_workflow_data, fetch_ihsg_weekly_data
+from .data import fetch_company_report, fetch_workflow_data, fetch_ihsg_weekly_data, fetch_upcoming_dividends, fetch_agm_data
 from .renderers.quarterly import QuarterlyRenderer
 from .renderers.top_movers import TopCompaniesMoversRenderer
-from .utils.slack import upload_posts_to_slack 
+from .renderers.upcoming_dividend import UpcomingDividendRenderer
+from .renderers.agm import AGMRenderer
+from .utils.slack import upload_posts_to_slack
 
 import typer
 
@@ -71,6 +73,55 @@ def companies_mover(
             [(path, "Top movers update\n\n#IDX #StockMarket #Indonesia #SectorsApp")],
             slack_channel=slack_channel,
         )
+
+
+@app.command("agm")
+def agm(
+    output: Path = typer.Option(Path("output"), "--output", "-o"),
+    slack_channel: str | None = typer.Option(None, "--slack-channel"),
+):
+    renderer = AGMRenderer(output_dir=output)
+
+    df = fetch_agm_data()
+    if df.empty:
+        typer.echo("Skipping agm: no data for today")
+        raise typer.Exit(code=0)
+
+    typer.echo(f"Rendering {len(df)} AGM card(s)...")
+    paths = renderer.render(data=df)
+    for path in paths:
+        typer.echo(path.resolve())
+
+    if slack_channel:
+        posts = [
+            (path, "AGM Results\n\n#IDX #StockMarket #Indonesia #AGM #SectorsApp")
+            for path in paths
+        ]
+        upload_posts_to_slack(posts, slack_channel=slack_channel)
+
+
+@app.command("upcoming-dividend")
+def upcoming_dividend(
+    output: Path = typer.Option(Path("output"), "--output", "-o"),
+    slack_channel: str | None = typer.Option(None, "--slack-channel"),
+):
+    renderer = UpcomingDividendRenderer(output_dir=output)
+
+    df = fetch_upcoming_dividends()
+    if df.empty:
+        typer.echo("Skipping upcoming-dividend: no data")
+        raise typer.Exit(code=0)
+
+    paths = renderer.render(data=df)
+    for path in paths:
+        typer.echo(path.resolve())
+
+    if slack_channel:
+        posts = [
+            (path, "Upcoming Dividends\n\n#IDX #StockMarket #Indonesia #Dividends #SectorsApp")
+            for path in paths
+        ]
+        upload_posts_to_slack(posts, slack_channel=slack_channel)
 
 
 if __name__ == "__main__":

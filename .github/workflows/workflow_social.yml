@@ -60,7 +60,7 @@ jobs:
           elif [ "${{ github.event.schedule }}" = "0 13 1 * *" ]; then
             echo "mode=companies-mover" >> "$GITHUB_OUTPUT"
             echo "channel=C04RC79U5NK" >> "$GITHUB_OUTPUT"
-          
+
           else
             echo "Unknown trigger"
             exit 1

@@ -174,3 +174,68 @@ def fetch_ihsg_weekly_data():
 
     return ihsg_df.to_dict(orient="records")
 
+
+def fetch_agm_data():
+    df_compro = fetch_supabase_table(
+        "idx_company_report",
+        columns="symbol,company_name,market_cap_rank",
+        query_modifier=lambda q: q.lte("market_cap_rank", 300),
+    )
+
+    df_agm = fetch_supabase_table("idx_agm")
+
+    if df_agm.empty or df_compro.empty:
+        return pd.DataFrame()
+
+    now = pd.Timestamp.now().normalize()
+    seven_days_ago = (now - pd.Timedelta(days=7)).strftime("%Y-%m-%d")
+    today = now.strftime("%Y-%m-%d")
+
+    df_agm = (
+        df_agm[
+            (df_agm["agm_date"] >= seven_days_ago)
+            & (df_agm["updated_on"] >= today)
+            & (df_agm["summary"].notna())
+            & (df_agm["symbol"].isin(df_compro["symbol"]))
+        ]
+        .sort_values("agm_date", ascending=False)
+    )
+
+    if df_agm.empty:
+        return df_agm
+
+    df_agm = df_agm.merge(df_compro, on="symbol", how="left")
+    
+    return df_agm.sort_values("agm_date", ascending=False).reset_index(drop=True)
+
+
+def fetch_upcoming_dividends():
+    from datetime import datetime, timedelta
+    today = datetime.now().strftime("%Y-%m-%d")
+    lookback = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+
+    df_div = fetch_supabase_table(
+        "idx_upcoming_dividend",
+        query_modifier=lambda q: q.gt("cum_date", today),
+    )
+    if df_div.empty:
+        return df_div
+
+    symbols = df_div["symbol"].tolist()
+    df_daily = fetch_supabase_table(
+        "idx_daily_data",
+        columns="symbol,close,date",
+        since_column="date",
+        since_value=lookback,
+        order_column="date",
+        order_desc=True,
+        query_modifier=lambda q: q.in_("symbol", symbols),
+    )
+
+    if not df_daily.empty and "symbol" in df_daily.columns:
+        df_daily = df_daily.drop_duplicates(subset="symbol", keep="first")
+
+    df = df_div.merge(df_daily, on="symbol", how="left")
+    df["dividend_yield"] = df["dividend_amount"] / df["close"]
+    return df.sort_values("cum_date").reset_index(drop=True)
+
