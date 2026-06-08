@@ -1,9 +1,10 @@
 name: Generate and Post News
 
 on:
-  # schedule:
-    # # Run daily at 01:30 UTC (08:30 WIB) — disabled until flooding fix is verified
-    # - cron: '30 1 * * *'
+  schedule:
+    # 12:00 WIB (Mon–Fri) = 05:00 UTC — re-enabled after news flooding fix
+    # (title+ticker+fuzzy dedup, IPO/insider/dividend excluded, 6-item cap)
+    - cron: '0 5 * * 1-5'
   workflow_dispatch:
     inputs:
       mode:

@@ -30,6 +30,7 @@ COLORS = {
     "green_deep": "#269958",
     "red": "#d64a4a",
     "red_deep": "#d74434",
+    "blue": "#3b82f6",
     "line": "#ececec",
     "white": "#ffffff",
     "off_white": "#f7f8fc",
@@ -41,7 +42,7 @@ CATEGORY_COLORS = {
     "Dividend Announcement": COLORS["green"],
     "Stock Buyback": COLORS["green"],
     "IPO": COLORS["green"],
-    "Rights Issue": COLORS["orange"],
+    "Rights Issue": COLORS["blue"],
     "Stock Split": COLORS["orange"],
     "Mergers & Acquisitions": COLORS["orange"],
     "Suspension": COLORS["red"],
@@ -141,6 +142,105 @@ def draw_wrapped(draw, xy, text, fnt, fill, max_width, line_gap=8, max_lines=Non
     return y
 
 
+def draw_wrapped_with_emphasis(draw, xy, text, fnt, fnt_emph, fill, fill_emph, max_width, line_gap=8, max_lines=None, pattern=r"\d"):
+    import re
+    rx = re.compile(pattern)
+    space_w = draw.textlength(" ", font=fnt)
+    words = str(text or "").split()
+
+    meta = []
+    for word in words:
+        emph = bool(rx.search(word))
+        f = fnt_emph if emph else fnt
+        meta.append((word, emph, f, draw.textlength(word, font=f)))
+
+    lines = []
+    current = []
+    current_w = 0
+    for entry in meta:
+        word_w = entry[3]
+        if not current:
+            current = [entry]
+            current_w = word_w
+        elif current_w + space_w + word_w <= max_width:
+            current.append(entry)
+            current_w += space_w + word_w
+        else:
+            lines.append(current)
+            current = [entry]
+            current_w = word_w
+    if current:
+        lines.append(current)
+
+    if max_lines and len(lines) > max_lines:
+        kept = lines[:max_lines]
+        ellipsis = "…"
+        ellipsis_w = draw.textlength(ellipsis, font=fnt)
+        last = list(kept[-1])
+        last_w = sum(w for _, _, _, w in last) + space_w * max(0, len(last) - 1)
+        while last and last_w + ellipsis_w > max_width:
+            removed = last.pop()
+            last_w -= removed[3]
+            if last:
+                last_w -= space_w
+        last.append((ellipsis, False, fnt, ellipsis_w))
+        kept[-1] = last
+        lines = kept
+
+    x, y = xy
+    for line in lines:
+        cur_x = x
+        for i, (word, emph, f, _) in enumerate(line):
+            if i > 0:
+                cur_x += space_w
+            c = fill_emph if emph else fill
+            draw.text((cur_x, y), word, font=f, fill=c)
+            cur_x += draw.textlength(word, font=f)
+        y += fnt.size + line_gap
+    return y
+
+
+def truncate_to_clause(draw, text, fnt, max_width, max_lines):
+    import re
+    text = str(text or "").strip()
+    if not text:
+        return text
+    if len(wrap_text(draw, text, fnt, max_width, max_lines=None)) <= max_lines:
+        return text
+    boundaries = [m.end() for m in re.finditer(r"[.,;:]\s", text)]
+    for end in sorted(boundaries, reverse=True):
+        candidate = text[:end].rstrip(" ,;:.")
+        if not candidate:
+            continue
+        candidate += "…"
+        if len(wrap_text(draw, candidate, fnt, max_width, max_lines=None)) <= max_lines:
+            return candidate
+    return text
+
+
+def relative_time(ts):
+    from datetime import datetime, timezone
+    if ts is None:
+        return ""
+    try:
+        if hasattr(ts, "to_pydatetime"):
+            ts = ts.to_pydatetime()
+        if isinstance(ts, str):
+            ts = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        seconds = (datetime.now(timezone.utc) - ts).total_seconds()
+        if seconds < 60:
+            return "just now"
+        if seconds < 3600:
+            return f"{int(seconds // 60)}m ago"
+        if seconds < 86400:
+            return f"{int(seconds // 3600)}h ago"
+        return f"{int(seconds // 86400)}d ago"
+    except Exception:
+        return ""
+
+
 def currency_idr(value):
     if value is None or str(value).lower() in {"nan", "none", ""}:
         return "-"
@@ -148,7 +248,7 @@ def currency_idr(value):
         value = float(value)
     except Exception:
         return "-"
-    
+
     if abs(value) >= 1_000_000_000_000:
         val = value / 1_000_000_000_000
         return f"IDR {val:,.2f}T"
@@ -159,6 +259,49 @@ def currency_idr(value):
         val = value / 1_000_000
         return f"IDR {val:,.2f}M"
     return f"IDR {value:,.0f}"
+
+
+def format_idr_short(value, signed=False):
+    if value is None or str(value).lower() in {"nan", "none", ""}:
+        return "-"
+    try:
+        value = float(value)
+    except Exception:
+        return "-"
+    mag = abs(value)
+    if mag >= 1_000_000_000_000:
+        body = f"IDR {mag / 1_000_000_000_000:.1f}T"
+    elif mag >= 1_000_000_000:
+        body = f"IDR {mag / 1_000_000_000:.1f}B"
+    elif mag >= 1_000_000:
+        body = f"IDR {mag / 1_000_000:.1f}M"
+    elif mag >= 1_000:
+        body = f"IDR {mag / 1_000:.1f}K"
+    else:
+        body = f"IDR {mag:.0f}"
+    if not signed:
+        return body
+    if value < 0:
+        return f"−{body}"
+    return f"+{body}"
+
+
+COHORT_COLORS = {
+    "Institutional": "blue",
+    "Mixed": "orange",
+    "Retail": "green",
+}
+
+
+def draw_progress_bar(draw, xy, width, height, fraction, fill, track="#ececec"):
+    x, y = xy
+    radius = height // 2
+    draw.rounded_rectangle((x, y, x + width, y + height), radius=radius, fill=track)
+    fill_w = int(width * max(0.0, min(1.0, fraction)))
+    if fill_w >= radius * 2:
+        draw.rounded_rectangle((x, y, x + fill_w, y + height), radius=radius, fill=fill)
+    elif fill_w > 0:
+        draw.rectangle((x, y, x + fill_w, y + height), fill=fill)
 
 
 def pct(value):
@@ -225,6 +368,30 @@ def clean_title(text):
     import re
     text = re.sub(r'^[\s\-_/]+|[\s\-_/]+$', '', text)
     return text
+
+
+def clean_headline(text):
+    if not text:
+        return ""
+    import re
+    s = str(text)
+    s = re.sub(r"\bPT\s+", "", s)
+    s = re.sub(r"\s+Tbk\b\.?", "", s)
+    return re.sub(r"\s{2,}", " ", s).strip()
+
+
+CATEGORY_SHORT = {
+    "Mergers & Acquisitions": "M&A",
+    "Dividend Announcement": "dividend",
+    "Insider Trading": "insider",
+    "Rights Issue": "rights",
+    "Stock Buyback": "buyback",
+    "Stock Split": "split",
+    "Suspension": "suspension",
+    "Trading Halt": "halt",
+    "Delisting": "delisting",
+    "IPO": "IPO",
+}
 
 
 class SocialImageRenderer:
@@ -736,43 +903,96 @@ class SocialImageRenderer:
         w, h = image.size
         margin = int(w * 0.08)
 
-        y = 330
-
-        title_fnt = font("Inter-Bold.ttf", 64)
-        y = draw_wrapped(draw, (margin, y), "Tier 1 IDX News", title_fnt, COLORS["ink"], w - 2 * margin, 18, 1)
-        y += 10
-        draw.text((margin, y), f"{date_label} WIB", font=font("Inter-Regular.ttf", 28), fill=COLORS["muted"])
-        y += 60
-
-        draw.line((margin, y, w - margin, y), fill=COLORS["line"], width=3)
-        y += 30
-
+        EXCLUDED = {"Insider Trading", "Dividend Announcement", "IPO"}
         MAX_ROWS = 6
-        MAX_PER_CATEGORY = 2
+        MAX_PER_CATEGORY = 3
         logo_size = 64
-        ROW_H_SHORT = 130
-        ROW_H_TALL = 165
+        number_col_w = 44
 
-        rows = []
-        cat_counts = {}
-        for news in news_list:
-            category = self._pick_category(news)
-            if cat_counts.get(category, 0) >= MAX_PER_CATEGORY:
+        import re as _re
+        from difflib import SequenceMatcher
+
+        def _norm_headline(text):
+            return _re.sub(r"[^a-z0-9]", "", clean_headline(text).lower())
+
+        eligible = []
+        seen_titles = set()
+        seen_cat_ticker = set()
+        norm_by_cat = {}
+        for n in news_list:
+            cat = self._pick_category(n)
+            if cat in EXCLUDED:
                 continue
-            rows.append(news)
-            cat_counts[category] = cat_counts.get(category, 0) + 1
-            if len(rows) >= MAX_ROWS:
+            key = (n.get("title") or "").strip().lower()
+            if not key or key in seen_titles:
+                continue
+            seen_titles.add(key)
+
+            # Fuzzy near-duplicate guard: the same event often appears several times
+            # worded slightly differently (and sometimes mis-tagged to a different
+            # ticker). Record EVERY title-unique headline so later copies can be
+            # matched against all earlier variants, not just the one we kept.
+            norm = _norm_headline(n.get("title"))
+            prev_norms = norm_by_cat.setdefault(cat, [])
+            is_fuzzy_dup = bool(norm) and any(
+                SequenceMatcher(None, norm, prev).ratio() >= 0.85 for prev in prev_norms
+            )
+            if norm:
+                prev_norms.append(norm)
+            if is_fuzzy_dup:
+                continue
+
+            tickers_str = format_tickers(n.get("tickers") or n.get("ticker") or n.get("symbol") or "")
+            primary = next((t.strip().split(".")[0] for t in tickers_str.split("/") if t.strip()), "")
+            cat_ticker_key = (cat, primary)
+            if primary and cat_ticker_key in seen_cat_ticker:
+                continue
+            if primary:
+                seen_cat_ticker.add(cat_ticker_key)
+            eligible.append(n)
+
+        buckets = {}
+        for n in eligible:
+            buckets.setdefault(self._pick_category(n), []).append(n)
+
+        selected = []
+        for cat in CATEGORY_PRIORITY:
+            if cat in EXCLUDED or cat not in buckets:
+                continue
+            for item in buckets[cat][:MAX_PER_CATEGORY]:
+                selected.append((cat, item))
+                if len(selected) >= MAX_ROWS:
+                    break
+            if len(selected) >= MAX_ROWS:
                 break
 
-        for news in rows:
-            category = self._pick_category(news)
-            accent = CATEGORY_COLORS.get(category, COLORS["orange"])
+        y = 300
+        prev_cat = None
+        idx_global = 0
+
+        for cat, news in selected:
+            accent = CATEGORY_COLORS.get(cat, COLORS["orange"])
+
+            if cat != prev_cat:
+                header_fnt = font("Inter-Bold.ttf", 26)
+                header_text = cat.upper()
+                header_text_w = draw.textlength(header_text, font=header_fnt)
+                header_h = 44
+                draw.rounded_rectangle(
+                    (margin, y, margin + header_text_w + 36, y + header_h),
+                    radius=header_h // 2,
+                    fill=accent,
+                )
+                draw.text((margin + 18, y + 8), header_text, font=header_fnt, fill=COLORS["white"])
+                y += header_h + 24
+                prev_cat = cat
+
+            idx_global += 1
 
             tickers_str = format_tickers(news.get("tickers") or news.get("ticker") or news.get("symbol") or "")
             tickers = [t.strip() for t in tickers_str.split("/") if t.strip()]
             extra_count = max(0, len(tickers) - 1)
             is_multi = extra_count > 0
-            row_h = ROW_H_TALL if is_multi else ROW_H_SHORT
 
             if tickers:
                 logo_symbol = tickers[0]
@@ -780,11 +1000,17 @@ class SocialImageRenderer:
                 title_words = str(news.get("title") or "").replace("PT ", "").split()
                 logo_symbol = title_words[0][:4].upper() if title_words else "?"
 
-            self._logo(image, (margin, y), logo_symbol, size=logo_size, accent=accent)
+            num_fnt = font("Inter-Bold.ttf", 28)
+            num_text = f"{idx_global:02d}"
+            num_w = draw.textlength(num_text, font=num_fnt)
+            draw.text((margin + (number_col_w - num_w) / 2 - 6, y + (logo_size - 28) / 2), num_text, font=num_fnt, fill=COLORS["faint"])
+
+            logo_x = margin + number_col_w
+            self._logo(image, (logo_x, y), logo_symbol, size=logo_size, accent=accent)
 
             if is_multi:
                 badge_d = 32
-                badge_x = margin + logo_size - badge_d + 6
+                badge_x = logo_x + logo_size - badge_d + 6
                 badge_y = y + logo_size - badge_d + 6
                 draw.ellipse((badge_x, badge_y, badge_x + badge_d, badge_y + badge_d), fill=COLORS["ink"], outline=COLORS["white"], width=2)
                 badge_fnt = font("Inter-Bold.ttf", 15)
@@ -792,63 +1018,104 @@ class SocialImageRenderer:
                 tw = draw.textlength(badge_text, font=badge_fnt)
                 draw.text((badge_x + (badge_d - tw) / 2, badge_y + 7), badge_text, font=badge_fnt, fill=COLORS["white"])
 
-            right_x = margin + logo_size + 20
+            right_x = logo_x + logo_size + 20
 
-            chip_fnt = font("Inter-Bold.ttf", 18)
-            chip_text = category.upper()
-            chip_text_w = draw.textlength(chip_text, font=chip_fnt)
-            chip_h = 26
-            draw.rounded_rectangle((right_x, y + 2, right_x + chip_text_w + 24, y + 2 + chip_h), radius=chip_h // 2, fill=accent)
-            draw.text((right_x + 12, y + 5), chip_text, font=chip_fnt, fill=COLORS["white"])
+            cursor_x = right_x
+            chip_h = 30
+            if tickers:
+                primary_ticker = tickers[0].split(".")[0]
+                ticker_fnt = font("Inter-Bold.ttf", 22)
+                ticker_text_w = draw.textlength(primary_ticker, font=ticker_fnt)
+                ticker_pill_w = ticker_text_w + 22
+                draw.rounded_rectangle(
+                    (cursor_x, y + 2, cursor_x + ticker_pill_w, y + 2 + chip_h),
+                    radius=chip_h // 2,
+                    fill=COLORS["white"],
+                    outline=accent,
+                    width=2,
+                )
+                draw.text((cursor_x + 11, y + 6), primary_ticker, font=ticker_fnt, fill=COLORS["ink"])
+                cursor_x += ticker_pill_w + 10
 
-            headline = str(news.get("title") or "").strip()
+            rel = relative_time(news.get("created_at"))
+            if rel:
+                ts_fnt = font("Inter-Regular.ttf", 20)
+                draw.text((cursor_x, y + 7), rel, font=ts_fnt, fill=COLORS["faint"])
+
+            headline_bottom = y + chip_h + 8
+            headline = clean_headline(news.get("title"))
             if headline:
-                draw_wrapped(
+                headline_fnt = font("Inter-SemiBold.ttf", 26)
+                headline_emph_fnt = font("Inter-Bold.ttf", 26)
+                headline = truncate_to_clause(draw, headline, headline_fnt, w - right_x - margin, max_lines=3)
+                headline_bottom = draw_wrapped_with_emphasis(
                     draw,
-                    (right_x, y + 40),
+                    (right_x, y + chip_h + 12),
                     headline,
-                    font("Inter-SemiBold.ttf", 24),
+                    headline_fnt,
+                    headline_emph_fnt,
                     COLORS["ink"],
+                    accent,
                     w - right_x - margin,
-                    line_gap=6,
-                    max_lines=2,
+                    line_gap=9,
+                    max_lines=3,
                 )
 
             if is_multi:
-                strip_y = y + 110
+                strip_y = headline_bottom + 8
                 strip_x = right_x
-                strip_fnt = font("Inter-Bold.ttf", 13)
+                strip_fnt = font("Inter-Bold.ttf", 14)
                 visible = tickers[:4]
                 hidden = len(tickers) - len(visible)
                 for ticker in visible:
                     clean = ticker.split(".")[0]
                     tw = draw.textlength(clean, font=strip_fnt)
-                    chip_w = tw + 16
-                    chip_height = 22
+                    chip_w = tw + 18
+                    chip_height = 24
                     draw.rounded_rectangle((strip_x, strip_y, strip_x + chip_w, strip_y + chip_height), radius=chip_height // 2, fill="#f0f0f0")
-                    draw.text((strip_x + 8, strip_y + 4), clean, font=strip_fnt, fill=COLORS["muted"])
+                    draw.text((strip_x + 9, strip_y + 4), clean, font=strip_fnt, fill=COLORS["muted"])
                     strip_x += chip_w + 6
                 if hidden > 0:
                     more_text = f"+{hidden}"
                     draw.text((strip_x + 4, strip_y + 4), more_text, font=strip_fnt, fill=COLORS["muted"])
+                headline_bottom = strip_y + 24
 
-            y += row_h
+            y = headline_bottom + 48
 
-        more_count = len(news_list) - len(rows)
+        shown_ids = {id(item) for _, item in selected}
+        more_count = sum(1 for n in eligible if id(n) not in shown_ids)
         if more_count > 0:
-            pill_text = f"+ {more_count} more updates"
-            pill_fnt = font("Inter-Regular.ttf", 20)
+            pill_text = f"+ {more_count} more"
+            pill_fnt = font("Inter-Regular.ttf", 22)
             pill_text_w = draw.textlength(pill_text, font=pill_fnt)
-            pill_h = 32
+            pill_h = 36
             draw.rounded_rectangle(
-                (margin, y + 8, margin + pill_text_w + 32, y + 8 + pill_h),
+                (margin, y + 8, margin + pill_text_w + 36, y + 8 + pill_h),
                 radius=pill_h // 2,
                 fill="#f0f0f0",
             )
-            draw.text((margin + 16, y + 14), pill_text, font=pill_fnt, fill=COLORS["muted"])
+            draw.text((margin + 18, y + 15), pill_text, font=pill_fnt, fill=COLORS["muted"])
 
-            note_fnt = font("Inter-Regular.ttf", 18)
-            draw.text((margin + pill_text_w + 48, y + 16), "from past 24h", font=note_fnt, fill=COLORS["faint"])
+            residual_cats = {}
+            for n in eligible:
+                if id(n) in shown_ids:
+                    continue
+                c = self._pick_category(n)
+                residual_cats[c] = residual_cats.get(c, 0) + 1
+            top = sorted(residual_cats.items(), key=lambda kv: -kv[1])[:3]
+            top_keys = {k for k, _ in top}
+            rest = sum(c for k, c in residual_cats.items() if k not in top_keys)
+            parts = [f"{c} {CATEGORY_SHORT.get(k, k.lower())}" for k, c in top]
+            if rest > 0:
+                parts.append(f"{rest} other")
+            note = " · ".join(parts) if parts else "from past 24h"
+            note_fnt = font("Inter-Regular.ttf", 20)
+            draw.text((margin + pill_text_w + 52, y + 16), note, font=note_fnt, fill=COLORS["faint"])
+            y += pill_h + 16
+
+        cta_fnt = font("Inter-SemiBold.ttf", 24)
+        cta_text = "Visit sectors.app/indonesia/news to read more  →"
+        draw.text((margin, y + 16), cta_text, font=cta_fnt, fill=COLORS["ink"])
 
         saved = self._save(image, filename or "news_tier1_digest.png")
         return str(saved)
@@ -909,3 +1176,962 @@ class SocialImageRenderer:
             draw.text((margin, 600), "No notable news items today.", font=font("Inter-Bold.ttf", 54), fill=COLORS["muted"])
 
         return self._save(image, filename)
+
+    def render_broker_bandar_scorecard(self, brokers, date_label, filename=None):
+        image = self._open("IDX - News 1.png")
+        draw = ImageDraw.Draw(image)
+        w, h = image.size
+        margin = int(w * 0.08)
+
+        y = 290
+
+        header_fnt = font("Inter-Bold.ttf", 26)
+        header_text = "BANDAR SCORECARD"
+        header_text_w = draw.textlength(header_text, font=header_fnt)
+        header_h = 44
+        draw.rounded_rectangle(
+            (margin, y, margin + header_text_w + 36, y + header_h),
+            radius=header_h // 2,
+            fill=COLORS["orange"],
+        )
+        draw.text((margin + 18, y + 8), header_text, font=header_fnt, fill=COLORS["white"])
+        y += header_h + 14
+
+        subtitle = f"{date_label} · top 10 brokers by gross turnover"
+        draw.text((margin, y), subtitle, font=font("Inter-Regular.ttf", 22), fill=COLORS["muted"])
+        y += 46
+
+        rows = list(brokers)[:10]
+        top5 = rows[:5]
+        bottom5 = rows[5:10]
+
+        number_col_w = 44
+        swatch_size = 80
+        card_h = 180
+
+        for entry in top5:
+            cohort_raw = entry.get("cohort")
+            cohort = cohort_raw if isinstance(cohort_raw, str) and cohort_raw else "Mixed"
+            cohort_color_key = COHORT_COLORS.get(cohort, "orange")
+            accent = COLORS[cohort_color_key]
+
+            rank = int(entry.get("rank") or 0)
+            num_fnt = font("Inter-Bold.ttf", 28)
+            num_text = f"{rank:02d}"
+            num_w = draw.textlength(num_text, font=num_fnt)
+            draw.text((margin + (number_col_w - num_w) / 2 - 6, y + (swatch_size - 28) / 2), num_text, font=num_fnt, fill=COLORS["faint"])
+
+            swatch_x = margin + number_col_w
+            draw.rounded_rectangle(
+                (swatch_x, y, swatch_x + swatch_size, y + swatch_size),
+                radius=16,
+                fill=accent,
+            )
+            code = str(entry.get("broker_code") or "?")
+            code_fnt = font("Inter-Bold.ttf", 36 if len(code) <= 2 else 28)
+            code_w = draw.textlength(code, font=code_fnt)
+            draw.text(
+                (swatch_x + (swatch_size - code_w) / 2, y + (swatch_size - code_fnt.size) / 2 - 4),
+                code,
+                font=code_fnt,
+                fill=COLORS["white"],
+            )
+
+            content_x = swatch_x + swatch_size + 18
+            content_w = w - content_x - margin
+
+            name_raw = entry.get("broker_name")
+            name = name_raw if isinstance(name_raw, str) and name_raw else code
+            name_fnt = font("Inter-SemiBold.ttf", 26)
+            name_max = content_w - 240
+            if draw.textlength(name, font=name_fnt) > name_max:
+                while name and draw.textlength(name + "…", font=name_fnt) > name_max:
+                    name = name[:-1]
+                name = name.rstrip() + "…"
+            draw.text((content_x, y + 2), name, font=name_fnt, fill=COLORS["ink"])
+
+            badge_x = content_x + draw.textlength(name, font=name_fnt) + 12
+            badge_fnt = font("Inter-Bold.ttf", 15)
+            badge_h = 26
+            badge_y = y + 6
+            if entry.get("is_foreign"):
+                bt = "FOREIGN"
+                btw = draw.textlength(bt, font=badge_fnt)
+                draw.rounded_rectangle(
+                    (badge_x, badge_y, badge_x + btw + 14, badge_y + badge_h),
+                    radius=badge_h // 2,
+                    fill=COLORS["white"],
+                    outline=COLORS["muted"],
+                    width=1,
+                )
+                draw.text((badge_x + 7, badge_y + 4), bt, font=badge_fnt, fill=COLORS["muted"])
+                badge_x += btw + 14 + 6
+            cohort_text = cohort.upper()
+            ctw = draw.textlength(cohort_text, font=badge_fnt)
+            draw.rounded_rectangle(
+                (badge_x, badge_y, badge_x + ctw + 14, badge_y + badge_h),
+                radius=badge_h // 2,
+                fill=accent,
+            )
+            draw.text((badge_x + 7, badge_y + 4), cohort_text, font=badge_fnt, fill=COLORS["white"])
+
+            gross_text = format_idr_short(entry.get("gross_idr")) + " gross"
+            gross_fnt = font("Inter-Bold.ttf", 30)
+            draw.text((content_x, y + 42), gross_text, font=gross_fnt, fill=COLORS["ink"])
+            gross_w = draw.textlength(gross_text, font=gross_fnt)
+
+            net_val = entry.get("net_idr")
+            net_text = format_idr_short(net_val, signed=True) + " net"
+            net_fnt = font("Inter-SemiBold.ttf", 22)
+            try:
+                net_color = COLORS["green"] if float(net_val) >= 0 else COLORS["red"]
+            except (TypeError, ValueError):
+                net_color = COLORS["muted"]
+            draw.text((content_x + gross_w + 16, y + 50), net_text, font=net_fnt, fill=net_color)
+
+            line3_y = y + 112
+            buy_sym = str(entry.get("top_buy_symbol") or "").split(".")[0]
+            sell_sym = str(entry.get("top_sell_symbol") or "").split(".")[0]
+            buy_amt = format_idr_short(entry.get("top_buy_net_idr"))
+            sell_amt = format_idr_short(abs(entry.get("top_sell_net_idr") or 0))
+            flow_fnt = font("Inter-SemiBold.ttf", 22)
+            flow_emph_fnt = font("Inter-Bold.ttf", 22)
+
+            buy_label = "▲ Buy "
+            sell_label = "▼ Sell "
+            label_fnt = font("Inter-SemiBold.ttf", 22)
+
+            cur = content_x
+            draw.text((cur, line3_y), buy_label, font=label_fnt, fill=COLORS["green"])
+            cur += draw.textlength(buy_label, font=label_fnt)
+            draw.text((cur, line3_y), buy_sym, font=flow_emph_fnt, fill=COLORS["ink"])
+            cur += draw.textlength(buy_sym, font=flow_emph_fnt)
+            draw.text((cur, line3_y), f" · {buy_amt}", font=flow_fnt, fill=COLORS["muted"])
+
+            cur2 = content_x + (content_w // 2)
+            draw.text((cur2, line3_y), sell_label, font=label_fnt, fill=COLORS["red"])
+            cur2 += draw.textlength(sell_label, font=label_fnt)
+            draw.text((cur2, line3_y), sell_sym, font=flow_emph_fnt, fill=COLORS["ink"])
+            cur2 += draw.textlength(sell_sym, font=flow_emph_fnt)
+            draw.text((cur2, line3_y), f" · {sell_amt}", font=flow_fnt, fill=COLORS["muted"])
+
+            divider_y = y + card_h - 8
+            draw.line((margin, divider_y, w - margin, divider_y), fill=COLORS["line"], width=1)
+
+            y += card_h
+
+        y += 10
+        mini_h = 58
+        mini_fnt = font("Inter-SemiBold.ttf", 22)
+        mini_bold = font("Inter-Bold.ttf", 22)
+        for entry in bottom5:
+            rank = int(entry.get("rank") or 0)
+            code = str(entry.get("broker_code") or "?")
+            gross = format_idr_short(entry.get("gross_idr"))
+            buy_sym = str(entry.get("top_buy_symbol") or "").split(".")[0]
+            sell_sym = str(entry.get("top_sell_symbol") or "").split(".")[0]
+
+            cur = margin
+            rank_text = f"{rank:02d}"
+            draw.text((cur, y + 12), rank_text, font=mini_bold, fill=COLORS["faint"])
+            cur += draw.textlength(rank_text, font=mini_bold) + 16
+
+            draw.text((cur, y + 12), code, font=mini_bold, fill=COLORS["ink"])
+            cur += draw.textlength(code, font=mini_bold) + 14
+
+            sep = "· "
+            draw.text((cur, y + 12), sep, font=mini_fnt, fill=COLORS["faint"])
+            cur += draw.textlength(sep, font=mini_fnt)
+
+            draw.text((cur, y + 12), gross, font=mini_fnt, fill=COLORS["muted"])
+            cur += draw.textlength(gross, font=mini_fnt) + 14
+
+            draw.text((cur, y + 12), sep, font=mini_fnt, fill=COLORS["faint"])
+            cur += draw.textlength(sep, font=mini_fnt)
+
+            buy_chunk = f"Buy "
+            draw.text((cur, y + 12), buy_chunk, font=mini_fnt, fill=COLORS["green"])
+            cur += draw.textlength(buy_chunk, font=mini_fnt)
+            draw.text((cur, y + 12), buy_sym, font=mini_bold, fill=COLORS["ink"])
+            cur += draw.textlength(buy_sym, font=mini_bold) + 14
+
+            draw.text((cur, y + 12), sep, font=mini_fnt, fill=COLORS["faint"])
+            cur += draw.textlength(sep, font=mini_fnt)
+
+            sell_chunk = f"Sell "
+            draw.text((cur, y + 12), sell_chunk, font=mini_fnt, fill=COLORS["red"])
+            cur += draw.textlength(sell_chunk, font=mini_fnt)
+            draw.text((cur, y + 12), sell_sym, font=mini_bold, fill=COLORS["ink"])
+
+            y += mini_h
+
+        y += 16
+        cta_fnt = font("Inter-SemiBold.ttf", 24)
+        draw.text((margin, y), "See the full broker breakdown on sectors.app  →", font=cta_fnt, fill=COLORS["ink"])
+
+        return self._save(image, filename or "broker_bandar_scorecard.png")
+
+    def render_broker_bandar_scorecard_compact(self, brokers, date_label, filename=None):
+        image = self._open("IDX - News 1.png")
+        draw = ImageDraw.Draw(image)
+        w, h = image.size
+        margin = int(w * 0.08)
+
+        y = 290
+
+        header_fnt = font("Inter-Bold.ttf", 26)
+        header_text = "BANDAR SCORECARD"
+        header_text_w = draw.textlength(header_text, font=header_fnt)
+        header_h = 44
+        draw.rounded_rectangle(
+            (margin, y, margin + header_text_w + 36, y + header_h),
+            radius=header_h // 2,
+            fill=COLORS["orange"],
+        )
+        draw.text((margin + 18, y + 8), header_text, font=header_fnt, fill=COLORS["white"])
+        y += header_h + 14
+
+        subtitle = f"{date_label} · top 10 brokers by gross turnover"
+        draw.text((margin, y), subtitle, font=font("Inter-Regular.ttf", 22), fill=COLORS["muted"])
+        y += 46
+
+        rows = list(brokers)[:10]
+        number_col_w = 44
+        swatch_size = 56
+        row_h = 116
+
+        for entry in rows:
+            cohort_raw = entry.get("cohort")
+            cohort = cohort_raw if isinstance(cohort_raw, str) and cohort_raw else "Mixed"
+            cohort_color_key = COHORT_COLORS.get(cohort, "orange")
+            accent = COLORS[cohort_color_key]
+
+            rank = int(entry.get("rank") or 0)
+            num_fnt = font("Inter-Bold.ttf", 26)
+            num_text = f"{rank:02d}"
+            num_w = draw.textlength(num_text, font=num_fnt)
+            draw.text((margin + (number_col_w - num_w) / 2 - 6, y + (swatch_size - 26) / 2), num_text, font=num_fnt, fill=COLORS["faint"])
+
+            swatch_x = margin + number_col_w
+            draw.rounded_rectangle(
+                (swatch_x, y, swatch_x + swatch_size, y + swatch_size),
+                radius=12,
+                fill=accent,
+            )
+            code = str(entry.get("broker_code") or "?")
+            code_fnt = font("Inter-Bold.ttf", 26 if len(code) <= 2 else 20)
+            code_w = draw.textlength(code, font=code_fnt)
+            draw.text(
+                (swatch_x + (swatch_size - code_w) / 2, y + (swatch_size - code_fnt.size) / 2 - 3),
+                code,
+                font=code_fnt,
+                fill=COLORS["white"],
+            )
+
+            content_x = swatch_x + swatch_size + 16
+
+            gross_text = format_idr_short(entry.get("gross_idr"))
+            gross_fnt = font("Inter-Bold.ttf", 24)
+            gross_w = draw.textlength(gross_text, font=gross_fnt)
+            gross_x = w - margin - gross_w
+            draw.text((gross_x, y + 4), gross_text, font=gross_fnt, fill=COLORS["ink"])
+
+            name_raw = entry.get("broker_name")
+            name = name_raw if isinstance(name_raw, str) and name_raw else code
+            name_fnt = font("Inter-SemiBold.ttf", 24)
+            name_max = gross_x - content_x - 16
+            if draw.textlength(name, font=name_fnt) > name_max:
+                while name and draw.textlength(name + "…", font=name_fnt) > name_max:
+                    name = name[:-1]
+                name = name.rstrip() + "…"
+            draw.text((content_x, y + 6), name, font=name_fnt, fill=COLORS["ink"])
+
+            buy_sym = str(entry.get("top_buy_symbol") or "").split(".")[0]
+            sell_sym = str(entry.get("top_sell_symbol") or "").split(".")[0]
+            buy_amt = format_idr_short(entry.get("top_buy_net_idr"))
+            sell_amt = format_idr_short(abs(entry.get("top_sell_net_idr") or 0))
+            flow_y = y + 46
+            flow_fnt = font("Inter-SemiBold.ttf", 18)
+            flow_bold = font("Inter-Bold.ttf", 18)
+
+            cur = content_x
+            buy_label = "▲ Buy "
+            draw.text((cur, flow_y), buy_label, font=flow_fnt, fill=COLORS["green"])
+            cur += draw.textlength(buy_label, font=flow_fnt)
+            draw.text((cur, flow_y), buy_sym, font=flow_bold, fill=COLORS["ink"])
+            cur += draw.textlength(buy_sym, font=flow_bold)
+            buy_amt_text = f"  {buy_amt}"
+            draw.text((cur, flow_y), buy_amt_text, font=flow_fnt, fill=COLORS["muted"])
+            cur += draw.textlength(buy_amt_text, font=flow_fnt) + 16
+
+            sep = "·  "
+            draw.text((cur, flow_y), sep, font=flow_fnt, fill=COLORS["faint"])
+            cur += draw.textlength(sep, font=flow_fnt)
+
+            sell_label = "▼ Sell "
+            draw.text((cur, flow_y), sell_label, font=flow_fnt, fill=COLORS["red"])
+            cur += draw.textlength(sell_label, font=flow_fnt)
+            draw.text((cur, flow_y), sell_sym, font=flow_bold, fill=COLORS["ink"])
+            cur += draw.textlength(sell_sym, font=flow_bold)
+            sell_amt_text = f"  {sell_amt}"
+            draw.text((cur, flow_y), sell_amt_text, font=flow_fnt, fill=COLORS["muted"])
+
+            cohort_short = cohort[0].upper() if cohort else "?"
+            badge_fnt = font("Inter-Bold.ttf", 12)
+            badge_x = gross_x + gross_w - 28
+            badge_y = y + 38
+            draw.rounded_rectangle(
+                (badge_x, badge_y, badge_x + 28, badge_y + 18),
+                radius=9,
+                fill=accent,
+            )
+            bw = draw.textlength(cohort_short, font=badge_fnt)
+            draw.text((badge_x + (28 - bw) / 2, badge_y + 3), cohort_short, font=badge_fnt, fill=COLORS["white"])
+            if entry.get("is_foreign"):
+                ftag = "F"
+                fw = draw.textlength(ftag, font=badge_fnt)
+                draw.rounded_rectangle(
+                    (badge_x - 24, badge_y, badge_x - 4, badge_y + 18),
+                    radius=9,
+                    fill=COLORS["white"],
+                    outline=COLORS["muted"],
+                    width=1,
+                )
+                draw.text((badge_x - 24 + (20 - fw) / 2, badge_y + 3), ftag, font=badge_fnt, fill=COLORS["muted"])
+
+            divider_y = y + row_h - 6
+            draw.line((margin, divider_y, w - margin, divider_y), fill=COLORS["line"], width=1)
+
+            y += row_h
+
+        y += 16
+        cta_fnt = font("Inter-SemiBold.ttf", 24)
+        draw.text((margin, y), "See the full broker breakdown on sectors.app  →", font=cta_fnt, fill=COLORS["ink"])
+
+        return self._save(image, filename or "broker_bandar_scorecard_compact.png")
+
+    def render_broker_trending_movers(self, payload, date_label, filename=None):
+        image = self._open("IDX - News 1.png")
+        draw = ImageDraw.Draw(image)
+        w, h = image.size
+        margin = int(w * 0.08)
+
+        y = 290
+
+        header_fnt = font("Inter-Bold.ttf", 26)
+        header_text = "TRENDING MOVERS"
+        htw = draw.textlength(header_text, font=header_fnt)
+        hh = 44
+        draw.rounded_rectangle(
+            (margin, y, margin + htw + 36, y + hh),
+            radius=hh // 2,
+            fill=COLORS["pink"],
+        )
+        draw.text((margin + 18, y + 8), header_text, font=header_fnt, fill=COLORS["white"])
+        y += hh + 14
+
+        subtitle = f"{date_label} · top 5 stocks · who's buying, who's selling"
+        draw.text((margin, y), subtitle, font=font("Inter-Regular.ttf", 22), fill=COLORS["muted"])
+        y += 46
+
+        stocks = list(payload.get("stocks", []))[:5]
+        number_col_w = 44
+        logo_size = 60
+        card_h = 250
+
+        for i, stock in enumerate(stocks):
+            rank = i + 1
+
+            num_fnt = font("Inter-Bold.ttf", 30)
+            num_text = f"{rank:02d}"
+            num_w = draw.textlength(num_text, font=num_fnt)
+            draw.text(
+                (margin + (number_col_w - num_w) / 2 - 6, y + (logo_size - 30) / 2),
+                num_text, font=num_fnt, fill=COLORS["faint"],
+            )
+
+            logo_x = margin + number_col_w
+            self._logo(image, (logo_x, y), stock["symbol"], size=logo_size, accent=COLORS["pink"])
+
+            content_x = logo_x + logo_size + 16
+            symbol = str(stock["symbol"]).split(".")[0]
+            sym_fnt = font("Inter-Bold.ttf", 30)
+            draw.text((content_x, y - 2), symbol, font=sym_fnt, fill=COLORS["ink"])
+            sym_w = draw.textlength(symbol, font=sym_fnt)
+
+            gross_text = format_idr_short(stock["gross_idr"])
+            gross_fnt = font("Inter-Bold.ttf", 26)
+            gross_w = draw.textlength(gross_text, font=gross_fnt)
+            gross_x = w - margin - gross_w
+            draw.text((gross_x, y + 2), gross_text, font=gross_fnt, fill=COLORS["ink"])
+
+            company = stock.get("company") or ""
+            company_fnt = font("Inter-Regular.ttf", 20)
+            company_max = gross_x - (content_x + sym_w + 12) - 20
+            if company and draw.textlength(company, font=company_fnt) > company_max:
+                while company and draw.textlength(company + "…", font=company_fnt) > company_max:
+                    company = company[:-1]
+                company = company.rstrip() + "…"
+            if company:
+                draw.text((content_x + sym_w + 12, y + 4), f"· {company}", font=company_fnt, fill=COLORS["muted"])
+
+            flow_y = y + 46
+            flow_fnt = font("Inter-SemiBold.ttf", 20)
+            f_net = stock.get("foreign_net", 0) or 0
+            f_amt = format_idr_short(f_net, signed=True)
+            f_color = COLORS["green"] if f_net >= 0 else COLORS["red"]
+            direction_word = "net buy" if f_net >= 0 else "net sell"
+
+            cur = content_x
+            draw.text((cur, flow_y), "FOREIGN ", font=flow_fnt, fill=COLORS["muted"])
+            cur += draw.textlength("FOREIGN ", font=flow_fnt)
+            draw.text((cur, flow_y), f_amt, font=flow_fnt, fill=f_color)
+            cur += draw.textlength(f_amt, font=flow_fnt) + 10
+            draw.text((cur, flow_y), f"({direction_word})", font=flow_fnt, fill=COLORS["faint"])
+
+            label_fnt = font("Inter-Bold.ttf", 18)
+            chip_fnt = font("Inter-Bold.ttf", 17)
+            chip_h = 32
+
+            buy_y = y + 94
+            draw.text((content_x, buy_y + 4), "▲ BUYERS", font=label_fnt, fill=COLORS["green"])
+            cur = content_x + draw.textlength("▲ BUYERS  ", font=label_fnt) + 6
+            for buyer in stock.get("buyers", [])[:3]:
+                code = str(buyer.get("broker_code") or "?")
+                amt = format_idr_short(buyer.get("net_idr", 0))
+                chip_text = f"{code}  {amt}"
+                ctw = draw.textlength(chip_text, font=chip_fnt)
+                chip_w = ctw + 18
+                draw.rounded_rectangle(
+                    (cur, buy_y, cur + chip_w, buy_y + chip_h),
+                    radius=chip_h // 2,
+                    fill="#e8f5ee",
+                    outline=COLORS["green"],
+                    width=1,
+                )
+                draw.text((cur + 9, buy_y + 4), chip_text, font=chip_fnt, fill=COLORS["green"])
+                cur += chip_w + 8
+
+            sell_y = y + 144
+            draw.text((content_x, sell_y + 4), "▼ SELLERS", font=label_fnt, fill=COLORS["red"])
+            cur = content_x + draw.textlength("▼ SELLERS  ", font=label_fnt)
+            for seller in stock.get("sellers", [])[:3]:
+                code = str(seller.get("broker_code") or "?")
+                amt = format_idr_short(abs(seller.get("net_idr", 0) or 0))
+                chip_text = f"{code}  {amt}"
+                ctw = draw.textlength(chip_text, font=chip_fnt)
+                chip_w = ctw + 18
+                draw.rounded_rectangle(
+                    (cur, sell_y, cur + chip_w, sell_y + chip_h),
+                    radius=chip_h // 2,
+                    fill="#fdebea",
+                    outline=COLORS["red"],
+                    width=1,
+                )
+                draw.text((cur + 9, sell_y + 4), chip_text, font=chip_fnt, fill=COLORS["red"])
+                cur += chip_w + 8
+
+            volume = stock.get("volume_lots", 0) or 0
+            trades = stock.get("trade_count", 0) or 0
+            stats_text = f"{volume:,} lots · {trades:,} trades"
+            stats_fnt = font("Inter-Regular.ttf", 16)
+            draw.text((content_x, y + 196), stats_text, font=stats_fnt, fill=COLORS["faint"])
+
+            divider_y = y + card_h - 12
+            draw.line((margin, divider_y, w - margin, divider_y), fill=COLORS["line"], width=1)
+
+            y += card_h
+
+        y += 8
+        cta_fnt = font("Inter-SemiBold.ttf", 24)
+        draw.text((margin, y), "See full stock flow on sectors.app  →", font=cta_fnt, fill=COLORS["ink"])
+
+        return self._save(image, filename or "broker_trending_movers.png")
+
+    def render_broker_weekly_recap(self, brokers, date_label, filename=None):
+        image = self._open("IDX - News 1.png")
+        draw = ImageDraw.Draw(image)
+        w, h = image.size
+        margin = int(w * 0.08)
+
+        y = 290
+
+        eyebrow_fnt = font("Inter-Bold.ttf", 22)
+        draw.text((margin, y), "WEEKLY RECAP", font=eyebrow_fnt, fill=COLORS["orange_deep"])
+        y += 36
+
+        title_fnt = font("Inter-Bold.ttf", 56)
+        y = draw_wrapped(draw, (margin, y), "Top 5 brokers this week", title_fnt, COLORS["ink"], w - 2 * margin, line_gap=4, max_lines=2)
+        y += 8
+
+        subtitle = f"{date_label} · ranked by gross turnover · vs prior week"
+        draw.text((margin, y), subtitle, font=font("Inter-Regular.ttf", 22), fill=COLORS["muted"])
+        y += 52
+
+        rows = list(brokers)[:5]
+        medal_colors = {1: "#D4A017", 2: "#A8A8A8", 3: "#B5651D"}
+
+        card_h = 210
+        swatch_size = 72
+        number_col_w = 70
+
+        for row in rows:
+            rank = int(row["this_rank"])
+            cohort_raw = row.get("cohort")
+            cohort = cohort_raw if isinstance(cohort_raw, str) and cohort_raw else "Mixed"
+            cohort_color_key = COHORT_COLORS.get(cohort, "orange")
+            accent = COLORS[cohort_color_key]
+
+            cx = margin + number_col_w // 2
+            cy = y + swatch_size // 2
+            if rank in medal_colors:
+                r_outer = 30
+                draw.ellipse(
+                    (cx - r_outer, cy - r_outer, cx + r_outer, cy + r_outer),
+                    fill=medal_colors[rank],
+                )
+                rank_fill = COLORS["white"]
+            else:
+                rank_fill = COLORS["faint"]
+            rank_fnt = font("Inter-Bold.ttf", 36 if rank <= 3 else 30)
+            rank_text = str(rank)
+            rw = draw.textlength(rank_text, font=rank_fnt)
+            draw.text(
+                (cx - rw / 2, cy - rank_fnt.size / 2 - 4),
+                rank_text, font=rank_fnt, fill=rank_fill,
+            )
+
+            swatch_x = margin + number_col_w + 16
+            draw.rounded_rectangle(
+                (swatch_x, y, swatch_x + swatch_size, y + swatch_size),
+                radius=14, fill=accent,
+            )
+            code_raw = row.get("broker_code")
+            code = code_raw if isinstance(code_raw, str) and code_raw else "?"
+            code_fnt = font("Inter-Bold.ttf", 30 if len(code) <= 2 else 22)
+            code_w = draw.textlength(code, font=code_fnt)
+            draw.text(
+                (swatch_x + (swatch_size - code_w) / 2, y + (swatch_size - code_fnt.size) / 2 - 4),
+                code, font=code_fnt, fill=COLORS["white"],
+            )
+
+            content_x = swatch_x + swatch_size + 18
+
+            name_raw = row.get("broker_name")
+            name = name_raw if isinstance(name_raw, str) and name_raw else code
+            name_fnt = font("Inter-SemiBold.ttf", 22)
+            name_max = w - content_x - 240 - margin
+            if draw.textlength(name, font=name_fnt) > name_max:
+                while name and draw.textlength(name + "…", font=name_fnt) > name_max:
+                    name = name[:-1]
+                name = name.rstrip() + "…"
+            draw.text((content_x, y + 2), name, font=name_fnt, fill=COLORS["ink"])
+
+            cohort_text = cohort.upper()
+            badge_fnt = font("Inter-Bold.ttf", 13)
+            ctw = draw.textlength(cohort_text, font=badge_fnt)
+            badge_x = content_x + draw.textlength(name, font=name_fnt) + 12
+            badge_h = 22
+            draw.rounded_rectangle(
+                (badge_x, y + 6, badge_x + ctw + 14, y + 6 + badge_h),
+                radius=badge_h // 2, fill=accent,
+            )
+            draw.text((badge_x + 7, y + 10), cohort_text, font=badge_fnt, fill=COLORS["white"])
+
+            gross_text = format_idr_short(row.get("week_gross_idr")) + " gross"
+            gross_fnt = font("Inter-Bold.ttf", 26)
+            draw.text((content_x, y + 38), gross_text, font=gross_fnt, fill=COLORS["ink"])
+            gw = draw.textlength(gross_text, font=gross_fnt)
+
+            net_val = row.get("week_net_idr")
+            net_text = format_idr_short(net_val, signed=True) + " net"
+            net_fnt = font("Inter-SemiBold.ttf", 18)
+            try:
+                net_color = COLORS["green"] if float(net_val) >= 0 else COLORS["red"]
+            except (TypeError, ValueError):
+                net_color = COLORS["muted"]
+            draw.text((content_x + gw + 16, y + 44), net_text, font=net_fnt, fill=net_color)
+
+            prior_gross = row.get("prior_week_gross_idr")
+            if prior_gross is not None and not (isinstance(prior_gross, float) and prior_gross != prior_gross):
+                prior_text = f"prior week: {format_idr_short(prior_gross)}"
+                prior_fnt = font("Inter-Regular.ttf", 16)
+                draw.text((content_x, y + 80), prior_text, font=prior_fnt, fill=COLORS["faint"])
+
+            label = row.get("rank_change_label", "—")
+            if label.startswith("UP"):
+                change_color = COLORS["green"]
+                change_arrow = "▲"
+            elif label.startswith("DOWN"):
+                change_color = COLORS["red"]
+                change_arrow = "▼"
+            elif label == "NEW":
+                change_color = COLORS["blue"]
+                change_arrow = "★"
+            else:
+                change_color = COLORS["muted"]
+                change_arrow = "="
+            change_text = f"{change_arrow}  {label}"
+            change_fnt = font("Inter-Bold.ttf", 20)
+            ctw = draw.textlength(change_text, font=change_fnt)
+            change_pad_h = 18
+            change_pill_w = ctw + change_pad_h * 2
+            change_pill_h = 44
+            change_x = w - margin - change_pill_w
+            change_y = y + (swatch_size - change_pill_h) // 2
+            draw.rounded_rectangle(
+                (change_x, change_y, change_x + change_pill_w, change_y + change_pill_h),
+                radius=change_pill_h // 2,
+                fill=change_color,
+            )
+            draw.text((change_x + change_pad_h, change_y + 11), change_text, font=change_fnt, fill=COLORS["white"])
+
+            divider_y = y + card_h - 12
+            draw.line((margin, divider_y, w - margin, divider_y), fill=COLORS["line"], width=1)
+
+            y += card_h
+
+        y += 8
+        cta_fnt = font("Inter-SemiBold.ttf", 20)
+        draw.text((margin, y), "See full weekly broker analysis on sectors.app  →", font=cta_fnt, fill=COLORS["ink"])
+
+        return self._save(image, filename or "broker_weekly_recap.png")
+
+    def render_weekly_accumulation(self, payload, display_range, filename=None):
+        return self._render_weekly_flow(
+            payload, display_range,
+            header_text="MOST ACCUMULATED",
+            header_color=COLORS["green"],
+            direction="accumulated",
+            chip_fill="#e8f5ee",
+            chip_outline=COLORS["green"],
+            chip_text=COLORS["green"],
+            filename=filename or "weekly_accumulation.png",
+        )
+
+    def render_weekly_distribution(self, payload, display_range, filename=None):
+        return self._render_weekly_flow(
+            payload, display_range,
+            header_text="MOST DISTRIBUTED",
+            header_color=COLORS["red"],
+            direction="distributed",
+            chip_fill="#fdebea",
+            chip_outline=COLORS["red"],
+            chip_text=COLORS["red"],
+            filename=filename or "weekly_distribution.png",
+        )
+
+    def _render_weekly_flow(self, payload, display_range, header_text, header_color, direction, chip_fill, chip_outline, chip_text, filename):
+        image = self._open("IDX - News 1.png")
+        draw = ImageDraw.Draw(image)
+        w, h = image.size
+        margin = int(w * 0.08)
+
+        y = 290
+
+        header_fnt = font("Inter-Bold.ttf", 26)
+        htw = draw.textlength(header_text, font=header_fnt)
+        hh = 44
+        draw.rounded_rectangle(
+            (margin, y, margin + htw + 36, y + hh),
+            radius=hh // 2, fill=header_color,
+        )
+        draw.text((margin + 18, y + 8), header_text, font=header_fnt, fill=COLORS["white"])
+        y += hh + 14
+
+        subtitle = f"{display_range} · top 5 stocks {direction} by foreign brokers"
+        draw.text((margin, y), subtitle, font=font("Inter-Regular.ttf", 22), fill=COLORS["muted"])
+        y += 46
+
+        stocks = list(payload.get("stocks", []))[:5]
+        number_col_w = 44
+        logo_size = 56
+        card_h = 220
+        key = "buyers" if direction == "accumulated" else "sellers"
+        arrow = "▲" if direction == "accumulated" else "▼"
+        label_word = "BUYERS" if direction == "accumulated" else "SELLERS"
+
+        for i, stock in enumerate(stocks):
+            rank = i + 1
+
+            num_fnt = font("Inter-Bold.ttf", 28)
+            num_text = f"{rank:02d}"
+            num_w = draw.textlength(num_text, font=num_fnt)
+            draw.text(
+                (margin + (number_col_w - num_w) / 2 - 6, y + (logo_size - 28) / 2),
+                num_text, font=num_fnt, fill=COLORS["faint"],
+            )
+
+            logo_x = margin + number_col_w
+            self._logo(image, (logo_x, y), stock["symbol"], size=logo_size, accent=header_color)
+
+            content_x = logo_x + logo_size + 16
+            symbol = str(stock["symbol"]).split(".")[0]
+            sym_fnt = font("Inter-Bold.ttf", 26)
+            draw.text((content_x, y - 2), symbol, font=sym_fnt, fill=COLORS["ink"])
+            sym_w = draw.textlength(symbol, font=sym_fnt)
+
+            headline_val = stock.get("foreign_net", 0) or 0
+            net_text = format_idr_short(headline_val, signed=True)
+            net_fnt = font("Inter-Bold.ttf", 24)
+            net_w = draw.textlength(net_text, font=net_fnt)
+            net_x = w - margin - net_w
+            draw.text((net_x, y + 2), net_text, font=net_fnt, fill=header_color)
+
+            company = stock.get("company") or ""
+            company_fnt = font("Inter-Regular.ttf", 18)
+            company_max = net_x - (content_x + sym_w + 12) - 20
+            if company and draw.textlength(company, font=company_fnt) > company_max:
+                while company and draw.textlength(company + "…", font=company_fnt) > company_max:
+                    company = company[:-1]
+                company = company.rstrip() + "…"
+            if company:
+                draw.text((content_x + sym_w + 12, y + 4), f"· {company}", font=company_fnt, fill=COLORS["muted"])
+
+            gross_short = format_idr_short(stock.get("gross_idr", 0))
+            trades = int(stock.get("trade_count", 0))
+            stats_text = f"{gross_short} weekly gross  ·  {trades:,} trades"
+            stats_fnt = font("Inter-Regular.ttf", 15)
+            draw.text((content_x, y + 40), stats_text, font=stats_fnt, fill=COLORS["faint"])
+
+            flow_y = y + 68
+            flow_fnt = font("Inter-SemiBold.ttf", 18)
+            f_net = stock.get("foreign_net", 0) or 0
+            f_amt = format_idr_short(f_net, signed=True)
+            f_color = COLORS["green"] if f_net >= 0 else COLORS["red"]
+            direction_word = "net buy" if f_net >= 0 else "net sell"
+            cur = content_x
+            draw.text((cur, flow_y), "FOREIGN NET ", font=flow_fnt, fill=COLORS["muted"])
+            cur += draw.textlength("FOREIGN NET ", font=flow_fnt)
+            draw.text((cur, flow_y), f_amt, font=flow_fnt, fill=f_color)
+            cur += draw.textlength(f_amt, font=flow_fnt) + 10
+            draw.text((cur, flow_y), f"({direction_word})", font=flow_fnt, fill=COLORS["faint"])
+
+            chip_y = y + 110
+            chip_fnt = font("Inter-Bold.ttf", 15)
+            chip_h = 28
+            label_fnt = font("Inter-Bold.ttf", 16)
+            label_text = f"{arrow} TOP FOREIGN {label_word}"
+            draw.text((content_x, chip_y + 4), label_text, font=label_fnt, fill=chip_text)
+            cur = content_x + draw.textlength(label_text + "    ", font=label_fnt)
+
+            brokers = stock.get(key, [])[:3]
+            for broker in brokers:
+                code_raw = broker.get("broker_code")
+                code = code_raw if isinstance(code_raw, str) and code_raw else "?"
+                amt = format_idr_short(abs(broker.get("net_idr", 0) or 0))
+                chip_text_str = f"{code}  {amt}"
+                ctw = draw.textlength(chip_text_str, font=chip_fnt)
+                chip_w = ctw + 18
+                draw.rounded_rectangle(
+                    (cur, chip_y, cur + chip_w, chip_y + chip_h),
+                    radius=chip_h // 2, fill=chip_fill, outline=chip_outline, width=1,
+                )
+                draw.text((cur + 9, chip_y + 4), chip_text_str, font=chip_fnt, fill=chip_text)
+                cur += chip_w + 8
+
+            div_y = y + card_h - 12
+            draw.line((margin, div_y, w - margin, div_y), fill=COLORS["line"], width=1)
+            y += card_h
+
+        y += 8
+        cta_fnt = font("Inter-SemiBold.ttf", 24)
+        draw.text((margin, y), "See full weekly flow on sectors.app  →", font=cta_fnt, fill=COLORS["ink"])
+
+        return self._save(image, filename)
+
+    def render_weekly_bandar_plays(self, payload, display_range, filename=None):
+        image = self._open("IDX - News 1.png")
+        draw = ImageDraw.Draw(image)
+        w, h = image.size
+        margin = int(w * 0.08)
+
+        y = 290
+
+        header_text = "BANDAR OF THE WEEK"
+        header_fnt = font("Inter-Bold.ttf", 26)
+        htw = draw.textlength(header_text, font=header_fnt)
+        hh = 44
+        header_color = "#D4A017"  # gold-ish
+        draw.rounded_rectangle(
+            (margin, y, margin + htw + 36, y + hh),
+            radius=hh // 2, fill=header_color,
+        )
+        draw.text((margin + 18, y + 8), header_text, font=header_fnt, fill=COLORS["white"])
+        y += hh + 14
+
+        subtitle = f"{display_range} · biggest single-stock conviction plays"
+        draw.text((margin, y), subtitle, font=font("Inter-Regular.ttf", 22), fill=COLORS["muted"])
+        y += 46
+
+        plays = list(payload.get("plays", []))[:3]
+        medal_colors = {1: "#D4A017", 2: "#A8A8A8", 3: "#B5651D"}
+        card_h = 440
+
+        for i, play in enumerate(plays):
+            rank = i + 1
+
+            # Rank medal circle on left
+            rank_size = 56
+            rank_x = margin
+            rank_y = y
+            draw.ellipse(
+                (rank_x, rank_y, rank_x + rank_size, rank_y + rank_size),
+                fill=medal_colors.get(rank, COLORS["muted"]),
+            )
+            rank_fnt = font("Inter-Bold.ttf", 32)
+            rt = str(rank)
+            rtw = draw.textlength(rt, font=rank_fnt)
+            draw.text(
+                (rank_x + (rank_size - rtw) / 2, rank_y + (rank_size - 32) / 2 - 4),
+                rt, font=rank_fnt, fill=COLORS["white"],
+            )
+
+            # Broker swatch
+            cohort_raw = play.get("cohort")
+            cohort = cohort_raw if isinstance(cohort_raw, str) and cohort_raw else "Mixed"
+            cohort_color_key = COHORT_COLORS.get(cohort, "orange")
+            accent = COLORS[cohort_color_key]
+
+            swatch_size = 72
+            swatch_x = rank_x + rank_size + 16
+            swatch_y = y
+            draw.rounded_rectangle(
+                (swatch_x, swatch_y, swatch_x + swatch_size, swatch_y + swatch_size),
+                radius=14, fill=accent,
+            )
+            code_raw = play.get("broker_code")
+            code = code_raw if isinstance(code_raw, str) and code_raw else "?"
+            code_fnt = font("Inter-Bold.ttf", 28 if len(code) <= 2 else 22)
+            code_w = draw.textlength(code, font=code_fnt)
+            draw.text(
+                (swatch_x + (swatch_size - code_w) / 2, swatch_y + (swatch_size - code_fnt.size) / 2 - 4),
+                code, font=code_fnt, fill=COLORS["white"],
+            )
+
+            # Broker name + badges
+            broker_x = swatch_x + swatch_size + 14
+            broker_name_raw = play.get("broker_name")
+            broker_name = broker_name_raw if isinstance(broker_name_raw, str) and broker_name_raw else code
+            bn_fnt = font("Inter-SemiBold.ttf", 26)
+            bn_max = (w - margin - 100 - broker_x)  # leave space for arrow and stock block
+            actual_max = (w - margin) // 2 - broker_x - 20
+            if draw.textlength(broker_name, font=bn_fnt) > actual_max:
+                while broker_name and draw.textlength(broker_name + "…", font=bn_fnt) > actual_max:
+                    broker_name = broker_name[:-1]
+                broker_name = broker_name.rstrip() + "…"
+            draw.text((broker_x, y + 2), broker_name, font=bn_fnt, fill=COLORS["ink"])
+
+            # Cohort + foreign badges
+            badge_y = y + 38
+            badge_fnt = font("Inter-Bold.ttf", 14)
+            badge_h = 24
+            cur = broker_x
+            cohort_text = cohort.upper()
+            ctw = draw.textlength(cohort_text, font=badge_fnt)
+            draw.rounded_rectangle(
+                (cur, badge_y, cur + ctw + 14, badge_y + badge_h),
+                radius=badge_h // 2, fill=accent,
+            )
+            draw.text((cur + 7, badge_y + 3), cohort_text, font=badge_fnt, fill=COLORS["white"])
+            cur += ctw + 14 + 6
+            if play.get("is_foreign"):
+                ft = "FOREIGN"
+                ftw = draw.textlength(ft, font=badge_fnt)
+                draw.rounded_rectangle(
+                    (cur, badge_y, cur + ftw + 14, badge_y + badge_h),
+                    radius=badge_h // 2, fill=COLORS["white"], outline=COLORS["muted"], width=1,
+                )
+                draw.text((cur + 7, badge_y + 3), ft, font=badge_fnt, fill=COLORS["muted"])
+
+            # Broker totals line
+            bt_gross = format_idr_short(play.get("broker_total_gross", 0))
+            bt_net = format_idr_short(play.get("broker_total_net", 0), signed=True)
+            bt_text = f"{bt_gross} weekly gross · {bt_net} weekly net"
+            bt_fnt = font("Inter-Regular.ttf", 16)
+            draw.text((broker_x, y + 68), bt_text, font=bt_fnt, fill=COLORS["faint"])
+
+            # Big arrow connector (between broker and stock blocks)
+            arrow_fnt = font("Inter-Bold.ttf", 48)
+            arrow_text = "→"
+            arrow_w = draw.textlength(arrow_text, font=arrow_fnt)
+            mid_x = w // 2
+            # Stock block on right
+            stock_x = mid_x + 40
+            stock_logo_size = 64
+            self._logo(image, (stock_x, y), str(play.get("symbol", "?")), size=stock_logo_size, accent=header_color)
+
+            # Draw arrow centered between broker block and stock logo
+            arrow_x = stock_x - 56
+            draw.text((arrow_x, y + 6), arrow_text, font=arrow_fnt, fill=COLORS["muted"])
+
+            stock_text_x = stock_x + stock_logo_size + 12
+            sym = str(play.get("symbol", "?")).split(".")[0]
+            sym_fnt = font("Inter-Bold.ttf", 28)
+            draw.text((stock_text_x, y + 4), sym, font=sym_fnt, fill=COLORS["ink"])
+            stock_company = play.get("company") or ""
+            sc_fnt = font("Inter-Regular.ttf", 16)
+            sc_max = w - margin - stock_text_x
+            if stock_company and draw.textlength(stock_company, font=sc_fnt) > sc_max:
+                while stock_company and draw.textlength(stock_company + "…", font=sc_fnt) > sc_max:
+                    stock_company = stock_company[:-1]
+                stock_company = stock_company.rstrip() + "…"
+            if stock_company:
+                draw.text((stock_text_x, y + 40), stock_company, font=sc_fnt, fill=COLORS["muted"])
+
+            # Headline number
+            net_text = f"{format_idr_short(play['net_idr'])} accumulated"
+            net_fnt = font("Inter-Bold.ttf", 36)
+            ntw = draw.textlength(net_text, font=net_fnt)
+            draw.text(((w - ntw) / 2, y + 110), net_text, font=net_fnt, fill=header_color)
+
+            # Two metric bars
+            bar_x = margin + 40
+            bar_w = w - margin * 2 - 80
+            bar_h = 16
+
+            # Concentration
+            conc = float(play.get("concentration_pct", 0))
+            label_fnt = font("Inter-SemiBold.ttf", 17)
+            value_fnt = font("Inter-Bold.ttf", 18)
+            conc_label = "CONCENTRATION"
+            draw.text((bar_x, y + 188), conc_label, font=label_fnt, fill=COLORS["muted"])
+            conc_value = f"{conc:.0f}%"
+            cvw = draw.textlength(conc_value, font=value_fnt)
+            draw.text((bar_x + bar_w - cvw, y + 188), conc_value, font=value_fnt, fill=header_color)
+            draw_progress_bar(draw, (bar_x, y + 214), bar_w, bar_h, conc / 100.0, header_color)
+            sub_label = f"of {code}'s total weekly buying"
+            draw.text((bar_x, y + 236), sub_label, font=font("Inter-Regular.ttf", 14), fill=COLORS["faint"])
+
+            # Stock share
+            share = float(play.get("stock_share_pct", 0))
+            share_label = "STOCK SHARE"
+            draw.text((bar_x, y + 268), share_label, font=label_fnt, fill=COLORS["muted"])
+            share_value = f"{share:.0f}%"
+            svw = draw.textlength(share_value, font=value_fnt)
+            draw.text((bar_x + bar_w - svw, y + 268), share_value, font=value_fnt, fill=header_color)
+            draw_progress_bar(draw, (bar_x, y + 294), bar_w, bar_h, share / 100.0, header_color)
+            sub_label2 = f"of all net buying into {sym} this week"
+            draw.text((bar_x, y + 316), sub_label2, font=font("Inter-Regular.ttf", 14), fill=COLORS["faint"])
+
+            # Narrative
+            if conc >= 50:
+                narrative = f"{code} accumulated {format_idr_short(play['net_idr'])} of {sym} — over half of their weekly buying went into this single stock."
+            elif conc >= 25:
+                narrative = f"{code} concentrated {conc:.0f}% of their weekly buying into {sym} — a clear conviction bet."
+            else:
+                narrative = f"{code} took a {format_idr_short(play['net_idr'])} position in {sym}, their largest single bet this week."
+            nar_fnt = font("Inter-Regular.ttf", 17)
+            draw_wrapped(draw, (margin, y + 360), narrative, nar_fnt, COLORS["ink"], w - margin * 2, line_gap=4, max_lines=2)
+
+            # Divider
+            div_y = y + card_h - 14
+            draw.line((margin, div_y, w - margin, div_y), fill=COLORS["line"], width=1)
+
+            y += card_h
+
+        y += 8
+        cta_fnt = font("Inter-SemiBold.ttf", 24)
+        draw.text((margin, y), "See full broker plays on sectors.app  →", font=cta_fnt, fill=COLORS["ink"])
+
+        return self._save(image, filename or "weekly_bandar_plays.png")
