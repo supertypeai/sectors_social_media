@@ -4,6 +4,7 @@ from .renderers.quarterly import QuarterlyRenderer
 from .renderers.top_movers import TopCompaniesMoversRenderer
 from .renderers.upcoming_dividend import UpcomingDividendRenderer
 from .renderers.agm import AGMRenderer
+from .renderers.dividend import DividendRenderer
 from .utils.slack import upload_posts_to_slack
 from .classification import (
     prepare_data_by_mcap, 
@@ -19,9 +20,6 @@ from .data import (
     fetch_agm_data, 
     fetch_upcoming_dividends
 )
-from .renderers.quarterly import QuarterlyRenderer
-from .renderers.top_movers import TopCompaniesMoversRenderer
-from .renderers.dividend import DividendRenderer
 from .utils.slack import upload_posts_to_slack 
 
 import typer
