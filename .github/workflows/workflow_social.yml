@@ -8,6 +8,9 @@ on:
     # Top movers monthly card: first day of month 20:00 WIB = 13:00 UTC
     - cron: '0 13 1 * *'
 
+    # Dividend (with historical) card: daily 20:00 WIB = 13:00 UTC
+    - cron: '0 13 * * *'
+
   workflow_dispatch:
     inputs:
       mode:
@@ -18,6 +21,7 @@ on:
         options:
           - quarterly
           - companies-mover
+          - dividend
 
       channel:
         description: 'Slack channel/DM ID, default = #visuals'
@@ -59,6 +63,10 @@ jobs:
           
           elif [ "${{ github.event.schedule }}" = "0 13 1 * *" ]; then
             echo "mode=companies-mover" >> "$GITHUB_OUTPUT"
+            echo "channel=C04RC79U5NK" >> "$GITHUB_OUTPUT"
+
+          elif [ "${{ github.event.schedule }}" = "0 13 * * *" ]; then
+            echo "mode=dividend" >> "$GITHUB_OUTPUT"
             echo "channel=C04RC79U5NK" >> "$GITHUB_OUTPUT"
 
           else
