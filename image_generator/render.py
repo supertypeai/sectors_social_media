@@ -1,11 +1,12 @@
-﻿import ast
+﻿from PIL import Image, ImageDraw, ImageFont, ImageOps
 from io import BytesIO
 from pathlib import Path
 from urllib.parse import urlparse
 
 import os
 import requests
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+import re
+import ast
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -62,6 +63,12 @@ CATEGORY_PRIORITY = [
     "Dividend Announcement",
     "Insider Trading",
 ]
+
+
+def clean_company_name(name: str) -> str: 
+    name = re.sub(r'\bPT\.?\s*', '', name, flags=re.IGNORECASE)
+    name = re.sub(r',?\s*Tbk\.?\s*$', '', name, flags=re.IGNORECASE)
+    return name.strip()
 
 
 def font(name="Inter-Bold.ttf", size=48):

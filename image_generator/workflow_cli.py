@@ -1,17 +1,33 @@
 from pathlib import Path
 
-from .classification import prepare_data_by_mcap, select_quarterly_data
-from .data import fetch_company_report, fetch_workflow_data, fetch_ihsg_weekly_data, fetch_upcoming_dividends, fetch_agm_data
 from .renderers.quarterly import QuarterlyRenderer
 from .renderers.top_movers import TopCompaniesMoversRenderer
 from .renderers.upcoming_dividend import UpcomingDividendRenderer
 from .renderers.agm import AGMRenderer
 from .utils.slack import upload_posts_to_slack
+from .classification import (
+    prepare_data_by_mcap, 
+    select_quarterly_data, 
+    prepare_data_upcoming_dividend
+)
+from .data import (
+    fetch_company_report, 
+    fetch_workflow_data, 
+    fetch_ihsg_weekly_data,
+    fetch_idx_company_report, 
+    fetch_idx_upcoming_dividend,
+    fetch_agm_data, 
+    fetch_upcoming_dividends
+)
+from .renderers.quarterly import QuarterlyRenderer
+from .renderers.top_movers import TopCompaniesMoversRenderer
+from .renderers.dividend import DividendRenderer
+from .utils.slack import upload_posts_to_slack 
 
 import typer
 
 
-app = typer.Typer(help="Generate workflow-data social images.")
+app = typer.Typer(help="Run Sectors social media generation jobs.")
 
 
 @app.command("quarterly")
@@ -123,6 +139,57 @@ def upcoming_dividend(
         ]
         upload_posts_to_slack(posts, slack_channel=slack_channel)
 
+        
+@app.command("dividend")
+def dividend(
+    output: Path = typer.Option(Path("output"), "--output", "-o"),
+    slack_channel: str | None = typer.Option(None, "--slack-channel")
+):
+    renderer = DividendRenderer(output_dir=output)
+    upcoming_dividends = fetch_idx_upcoming_dividend(to_df=False)
+
+    if not upcoming_dividends:
+        typer.echo("Skipping dividend: upcoming dividend data is null")
+        raise typer.Exit(code=0)
+
+    upcoming_symbols = [record['symbol'] for record in upcoming_dividends]
+
+    company_reports = fetch_idx_company_report(upcoming_symbols)
+
+    payload = prepare_data_upcoming_dividend(
+        upcoming_dividends=upcoming_dividends, 
+        company_reports=company_reports, 
+        min_yield_growth=0.1
+    )
+
+    if not payload:
+        typer.echo("Skipping dividend: payload to render is null")
+        raise typer.Exit(code=0)
+
+    paths = []
+
+    for record in payload:
+        symbol = record["symbol"].replace(".JK", "")
+
+        path = renderer.render(
+            data=record,
+            filename=f"upcoming_dividend_{symbol.lower()}.png",
+        )
+
+        caption = (
+            f"{symbol} dividend with historical data\n"
+            "#IDX #Dividend #SectorsApp"
+        )
+
+        paths.append((path, caption))
+    
+    if slack_channel:
+        upload_posts_to_slack(
+            paths,
+            slack_channel=slack_channel,
+        )
+
 
 if __name__ == "__main__":
     app()
+

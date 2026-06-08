@@ -1,7 +1,10 @@
+from pathlib import Path
+from datetime import date, datetime, timedelta
+
+import pandas as pd
 import json
 import os
-from pathlib import Path
-import pandas as pd
+
 
 FILINGS_COLUMNS = [
     "source",
@@ -143,7 +146,7 @@ def fetch_workflow_data(
         columns=columns,
          query_modifier=lambda query: query.or_(
             ",".join(f"{column_name}.not.is.null" for column_name in required_columns)
-        ),
+        )
     )
 
     if is_output_json:
@@ -156,7 +159,7 @@ def fetch_company_report():
     company_report_df = fetch_supabase_table(
         table_name="idx_company_report",
         columns="symbol, market_cap",
-        query_modifier=lambda query: query.lte("market_cap_rank", 50),
+        query_modifier=lambda query: query.lte("market_cap_rank", 50)
     )
 
     return company_report_df
@@ -169,7 +172,7 @@ def fetch_ihsg_weekly_data():
         query_modifier=lambda query: query
             .eq("index_code", "IHSG")
             .order("date", desc=True)
-            .limit(6),
+            .limit(6)
     )
 
     return ihsg_df.to_dict(orient="records")
@@ -209,15 +212,27 @@ def fetch_agm_data():
     return df_agm.sort_values("agm_date", ascending=False).reset_index(drop=True)
 
 
+def fetch_idx_upcoming_dividend(to_df: bool) -> pd.DataFrame | list[dict]:
+    today = date.today().isoformat()
+
+    idx_upcoming_dividend = fetch_supabase_table(
+        table_name='idx_upcoming_dividend',
+        query_modifier=lambda query: query 
+            .gt("cum_date", today)
+            .order("updated_on", desc=False)
+    )
+
+    if to_df:
+        return idx_upcoming_dividend 
+    
+    return idx_upcoming_dividend.to_dict(orient="records")
+
+
 def fetch_upcoming_dividends():
-    from datetime import datetime, timedelta
-    today = datetime.now().strftime("%Y-%m-%d")
     lookback = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
 
-    df_div = fetch_supabase_table(
-        "idx_upcoming_dividend",
-        query_modifier=lambda q: q.gt("cum_date", today),
-    )
+    df_div = fetch_idx_upcoming_dividend(to_df=True)
+
     if df_div.empty:
         return df_div
 
@@ -239,3 +254,33 @@ def fetch_upcoming_dividends():
     df["dividend_yield"] = df["dividend_amount"] / df["close"]
     return df.sort_values("cum_date").reset_index(drop=True)
 
+
+def fetch_idx_company_report(symbols: list[str]) -> list[dict]:
+    columns = [
+        'symbol, historical_dividends, yield_ttm, dividend_ttm, '
+        'sector, last_ex_dividend_date, dividend_yield_avg, company_name'
+    ]
+
+    idx_company_report = fetch_supabase_table(
+        table_name='idx_company_report',
+        columns=columns,
+        query_modifier=lambda query: query.in_("symbol", symbols)
+    )
+
+    return idx_company_report.to_dict(orient='records')
+
+
+def fetch_idx_daily_data(symbol: str, from_date: str) -> list[dict]:
+    idx_daily_data = fetch_supabase_table(
+        table_name='idx_daily_data',
+        query_modifier=lambda query: query
+            .eq("symbol", symbol)
+            .gte("date", from_date)
+            .order("date", desc=False)
+    )
+
+    return [
+        {"date": record["date"], "close": record["close"]}
+        for record in idx_daily_data.to_dict(orient="records")
+        if record.get("close") is not None
+    ]

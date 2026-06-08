@@ -1,8 +1,12 @@
-import ast
-import json
-from datetime import timedelta
+from datetime import timedelta, date
+from typing import Optional 
+
+from .data import fetch_idx_daily_data
 
 import pandas as pd
+import ast
+import json
+import bisect 
 
 
 IMPORTANT_FILINGS_TAGS = {
@@ -192,4 +196,120 @@ def select_quarterly_data(
         return [row for row in data_workflow if row.get("quarterly_low") is not None]
     
     return [row for row in data_workflow if row.get("quarterly_high") is not None]
+
+
+def get_closest_price_to_date(
+    daily_records: list[dict],
+    target_date: str
+) -> Optional[float]:
+    if not daily_records:
+        return None
+
+    dates = [record["date"] for record in daily_records]
+    position = bisect.bisect_left(dates, target_date)
+
+    if position == 0:
+        return daily_records[0]["close"]
+    
+    if position >= len(dates):
+        return daily_records[-1]["close"]
+
+    days_to_before = (
+        date.fromisoformat(target_date) - date.fromisoformat(dates[position - 1])
+    ).days
+
+    days_to_after = (
+        date.fromisoformat(dates[position]) - date.fromisoformat(target_date)
+    ).days
+
+    if days_to_after <= days_to_before:
+        return daily_records[position]["close"]
+    
+    return daily_records[position - 1]["close"]
+
+
+def compute_yield_growth(
+    current_yield: float,
+    historical_dividends: dict,
+    announcement_year: int
+) -> Optional[float]:
+    sorted_years = sorted(historical_dividends.keys())
+
+    prior_year = None
+
+    for year in reversed(sorted_years):
+        if int(year) < announcement_year:
+            prior_year = year
+            break
+
+    if prior_year is None:
+        return None
+
+    prior_year_total_yield = historical_dividends[prior_year].get("total_yield")
+
+    if not prior_year_total_yield:
+        return None
+
+    return (current_yield - prior_year_total_yield) / prior_year_total_yield
+
+
+def prepare_data_upcoming_dividend(
+    upcoming_dividends: list[dict],
+    company_reports: list[dict],
+    min_yield_growth: float = 0.0
+) -> list[dict]:
+    lookup_upcoming_dividend = {
+        record['symbol']: record
+        for record in upcoming_dividends
+    }
+
+    lookback_date = (date.today() - timedelta(days=30)).isoformat()
+    enriched_reports = []
+
+    for company_report in company_reports:
+        symbol = company_report.get('symbol')
+        historical_dividends = company_report.get('historical_dividends')
+        yield_ttm = company_report.get('yield_ttm')
+
+        if (
+            symbol not in lookup_upcoming_dividend 
+            or historical_dividends is None
+            or yield_ttm < 0.1
+        ):
+            continue
+
+        upcoming_dividend_record = lookup_upcoming_dividend[symbol]
+        dividend_amount = upcoming_dividend_record.get('dividend_amount')
+        cum_date = upcoming_dividend_record.get('cum_date')
+        ex_date = upcoming_dividend_record.get('ex_date')
+
+        if not all([dividend_amount, cum_date, ex_date]):
+            continue
+
+        announcement_year = date.fromisoformat(ex_date).year
+
+        # idx daily data have 1m+ records, i found it unefficient to fetch all and create a hash map
+        # so this fetching is inside loop, which i think more reasonable
+        daily_records = fetch_idx_daily_data(symbol, lookback_date)
+        close_price = get_closest_price_to_date(daily_records, cum_date)
+
+        if not close_price:
+            continue
+
+        current_yield = dividend_amount / close_price
+        yield_growth = compute_yield_growth(
+            current_yield, historical_dividends, announcement_year
+        )
+
+        if yield_growth is None or yield_growth < min_yield_growth:
+            continue
+
+        enriched_reports.append({
+            **company_report,
+            **upcoming_dividend_record,
+            'current_yield': current_yield,
+            'yield_growth': yield_growth,
+        })
+
+    return enriched_reports
 

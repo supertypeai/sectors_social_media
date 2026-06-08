@@ -5,11 +5,10 @@ from pathlib import Path
 from image_generator.render import (
     SocialImageRenderer, 
     COLORS, 
-    font, 
+    font,
+    clean_company_name, 
     format_price
 )
-
-import re 
 
 
 class TopCompaniesMoversRenderer(SocialImageRenderer):
@@ -30,11 +29,6 @@ class TopCompaniesMoversRenderer(SocialImageRenderer):
         bbox = draw.textbbox((0, 0), text, font=fnt)
         text_height = bbox[3] - bbox[1]
         return int(center_y - text_height / 2 - bbox[1])
-    
-    def _clean_company_name(self, name: str) -> str: 
-        name = re.sub(r'\bPT\.?\s*', '', name, flags=re.IGNORECASE)
-        name = re.sub(r',?\s*Tbk\.?\s*$', '', name, flags=re.IGNORECASE)
-        return name.strip()
 
     def render_title_section(self, draw: ImageDraw.ImageDraw, image_width: int):
         scale = image_width / 1200
@@ -187,7 +181,7 @@ class TopCompaniesMoversRenderer(SocialImageRenderer):
 
             symbol = company["symbol"].replace(".JK", "")
             company_name = company["company_name"]
-            clean_company_name = self._clean_company_name(company_name)
+            cleaned_company_name = clean_company_name(company_name)
             section_data = company[section_key]
 
             self._logo(
@@ -208,7 +202,7 @@ class TopCompaniesMoversRenderer(SocialImageRenderer):
             )
 
             symbol_w = draw.textbbox((0, 0), symbol, font=ticker_font)[2]
-            suffix = f" · {clean_company_name}"
+            suffix = f" · {cleaned_company_name}"
             draw.text(
                 (
                     ticker_x + symbol_w, 
