@@ -2,8 +2,8 @@ name: Generate and Post Workflow
 
 on:
   schedule:
-    # Quarterly/weekly card: Monday 19:00 WIB = Monday 12:00 UTC
-    - cron: '0 12 * * 1'
+    # Every Friday at 20:00 WIB = 13:00 UTC
+    - cron: '0 13 * * 5'
 
     # Top movers monthly card: first day of month 19:00 WIB = 12:00 UTC
     - cron: '0 12 1 * *'
@@ -57,7 +57,7 @@ jobs:
             echo "mode=${{ github.event.inputs.mode }}" >> "$GITHUB_OUTPUT"
             echo "channel=${{ github.event.inputs.channel || 'C04RC79U5NK' }}" >> "$GITHUB_OUTPUT"
           
-          elif [ "${{ github.event.schedule }}" = "0 12 * * 1" ]; then
+          elif [ "${{ github.event.schedule }}" = "0 13 * * 5'" ]; then
             echo "mode=quarterly" >> "$GITHUB_OUTPUT"
             echo "channel=C04RC79U5NK" >> "$GITHUB_OUTPUT"
 
