@@ -5,6 +5,11 @@ import os
 
 
 def upload_posts_to_slack(posts: list, slack_channel: str | None = None):
+    """Upload each post to Slack. Returns the list of items that ACTUALLY
+    uploaded, so callers can persist state only for posts that truly went out
+    (a swallowed Slack error must not be mistaken for success). When Slack is
+    not configured nothing is uploaded, so an empty list is returned.
+    """
     slack_token = os.getenv("SLACK_BOT_TOKEN")
 
     if slack_token:
@@ -14,9 +19,9 @@ def upload_posts_to_slack(posts: list, slack_channel: str | None = None):
         for item in posts:
             path = item[0] if isinstance(item, tuple) else item
             print(Path(path).resolve())
-            
-        return
-    
+
+        return []
+
     client = WebClient(token=slack_token)
     target_channel = slack_channel
 
@@ -28,9 +33,10 @@ def upload_posts_to_slack(posts: list, slack_channel: str | None = None):
 
         except Exception as error:
             print(f"Could not open DM with {slack_channel}: {error}")
-            return
+            return []
 
-    for item in posts: 
+    uploaded = []
+    for item in posts:
         if isinstance(item, tuple):
             path, caption = item
 
@@ -48,7 +54,10 @@ def upload_posts_to_slack(posts: list, slack_channel: str | None = None):
                 file=str(resolved),
                 initial_comment=caption,
             )
+            uploaded.append(item)
 
         except Exception as error:
             print(f"Slack error: {error}")
+
+    return uploaded
 

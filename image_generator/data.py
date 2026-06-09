@@ -4,11 +4,17 @@ from pathlib import Path
 import pandas as pd
 
 FILINGS_COLUMNS = [
+    "id",
     "source",
     "created_at",
+    "timestamp",
     "symbol",
     "title",
+    "body",
     "tags",
+    "transaction_type",
+    "holder_type",
+    "amount_transaction",
     "price",
     "transaction_value",
     "holding_before",
@@ -18,6 +24,7 @@ FILINGS_COLUMNS = [
     "share_percentage_transaction",
     "holder_name",
     "context",
+    "highlights",
     "price_transaction",
 ]
 
@@ -125,6 +132,46 @@ def fetch_news(since=None):
     return _select_existing_columns(df, NEWS_COLUMNS)
 
 
+def fetch_daily_prices(symbol, since=None, until=None):
+    """Daily close prices for one symbol, ascending by date. Used for cluster charts."""
+    def modifier(query):
+        if since:
+            query = query.gte("date", since)
+        if until:
+            query = query.lte("date", until)
+        return query.order("date", desc=False)
+
+    return fetch_supabase_table(
+        "idx_daily_data",
+        columns="date, close",
+        symbol_column="symbol",
+        symbol_value=symbol,
+        query_modifier=modifier,
+    )
+
+
+def fetch_daily_market(symbol, since=None, until=None):
+    """Daily close + volume + foreign flow for one symbol, ascending by date.
+
+    Richer superset of fetch_daily_prices used by the insider-cluster carousel to
+    add foreign-flow context. Columns beyond close may be null for illiquid names.
+    """
+    def modifier(query):
+        if since:
+            query = query.gte("date", since)
+        if until:
+            query = query.lte("date", until)
+        return query.order("date", desc=False)
+
+    return fetch_supabase_table(
+        "idx_daily_data",
+        columns="date, close, volume, foreign_buy_volume, foreign_sell_volume",
+        symbol_column="symbol",
+        symbol_value=symbol,
+        query_modifier=modifier,
+    )
+
+
 def fetch_company_profiles():
     df = fetch_supabase_table("idx_company_profile", columns="symbol, company_name")
     if df.empty:
@@ -160,6 +207,25 @@ def fetch_company_report():
     )
 
     return company_report_df
+
+
+def fetch_company_report_earnings(max_rank: int = 200):
+    """Per-symbol fundamentals for the earnings-spike post.
+
+    Pulls the ready-made YoY growth fields plus the quarterly/annual history
+    needed to draw the trend, limited to recognizable names by market-cap rank.
+    """
+    return fetch_supabase_table(
+        table_name="idx_company_report",
+        columns=(
+            "symbol, company_name, sector, sub_sector, market_cap, market_cap_rank, "
+            "last_close_price, daily_close_change, forward_pe, eps, "
+            "yoy_quarter_earnings_growth, yoy_quarter_revenue_growth, "
+            "historical_financials_quarterly, historical_eps"
+        ),
+        query_modifier=lambda query: query.lte("market_cap_rank", max_rank)
+        .order("market_cap_rank", desc=False),
+    )
 
 
 def fetch_ihsg_weekly_data():
