@@ -25,10 +25,17 @@ from .insider_patterns import (
     select_earnings_spikes,
 )
 from .data import (
+    fetch_broker_bandar_scorecard,
+    fetch_broker_trending_movers,
+    fetch_broker_weekly_recap,
     fetch_company_profiles,
     fetch_company_report_earnings,
     fetch_filings,
+    fetch_latest_broker_date,
     fetch_news,
+    fetch_weekly_accumulation,
+    fetch_weekly_bandar_plays,
+    fetch_weekly_distribution,
     load_records,
 )
 from .utils.slack import upload_posts_to_slack
@@ -393,6 +400,166 @@ def generate(args):
             for filing in rows:
                 paths.append(renderer.render_tagged_filing(filing))
 
+    if args.mode == "broker-bandar":
+        if args.input:
+            df = load_records(args.input)
+        else:
+            target_date = None
+            if args.date_label:
+                try:
+                    target_date = datetime.strptime(args.date_label, "%d %B %Y").strftime("%Y-%m-%d")
+                except ValueError:
+                    target_date = args.date_label
+            if not target_date:
+                target_date = fetch_latest_broker_date()
+            if not target_date:
+                print("No broker data available.")
+                df = None
+            else:
+                print(f"Fetching broker scorecard for {target_date}...")
+                df = fetch_broker_bandar_scorecard(target_date)
+        if df is not None and not df.empty:
+            display_date = date_label(args.date_label)
+            try:
+                if not args.date_label and target_date:
+                    display_date = datetime.strptime(target_date, "%Y-%m-%d").strftime("%d %B %Y")
+            except (ValueError, TypeError):
+                pass
+            print(f"Rendering bandar scorecard with {len(df)} broker(s)")
+            records = df.to_dict("records")
+            path = renderer.render_broker_bandar_scorecard(records, display_date)
+            caption = (
+                f":bar_chart: *Bandar Scorecard — {display_date}*\n\n"
+                "#IDX #StockMarket #Indonesia #BrokerActivity #SectorsApp"
+            )
+            paths.append((path, caption))
+        else:
+            print("No broker rows to render.")
+
+    if args.mode == "broker-trending":
+        target_date = None
+        if args.date_label:
+            try:
+                target_date = datetime.strptime(args.date_label, "%d %B %Y").strftime("%Y-%m-%d")
+            except ValueError:
+                target_date = args.date_label
+        if not target_date:
+            target_date = fetch_latest_broker_date()
+        if target_date:
+            print(f"Fetching trending movers for {target_date}...")
+            payload = fetch_broker_trending_movers(target_date)
+            display_date = date_label(args.date_label) if args.date_label else datetime.strptime(target_date, "%Y-%m-%d").strftime("%d %B %Y")
+            if payload["stocks"]:
+                print(f"Rendering trending movers with {len(payload['stocks'])} stock(s)")
+                path = renderer.render_broker_trending_movers(payload, display_date)
+                caption = (
+                    f":zap: *Trending Movers — {display_date}*\n\n"
+                    "#IDX #StockMarket #Indonesia #BrokerActivity #SectorsApp"
+                )
+                paths.append((path, caption))
+            else:
+                print("No trending-mover data to render.")
+
+    if args.mode == "broker-weekly":
+        week_end = None
+        if args.date_label:
+            try:
+                week_end_dt = datetime.strptime(args.date_label, "%d %B %Y")
+                week_end = week_end_dt.strftime("%Y-%m-%d")
+            except ValueError:
+                week_end = args.date_label
+        if not week_end:
+            latest = fetch_latest_broker_date()
+            if latest:
+                week_end = latest
+        if week_end:
+            week_end_dt = datetime.strptime(week_end, "%Y-%m-%d")
+            week_start_dt = week_end_dt - timedelta(days=4)
+            prior_end_dt = week_end_dt - timedelta(days=7)
+            prior_start_dt = prior_end_dt - timedelta(days=4)
+            week_start = week_start_dt.strftime("%Y-%m-%d")
+            prior_start = prior_start_dt.strftime("%Y-%m-%d")
+            prior_end = prior_end_dt.strftime("%Y-%m-%d")
+            print(f"Fetching weekly recap for {week_start}..{week_end} (prior: {prior_start}..{prior_end})...")
+            df = fetch_broker_weekly_recap(week_start, week_end, prior_start, prior_end)
+            if week_start_dt.month == week_end_dt.month:
+                display_range = f"{week_start_dt.strftime('%d')}–{week_end_dt.strftime('%d %B %Y')}"
+            else:
+                display_range = f"{week_start_dt.strftime('%d %b')} – {week_end_dt.strftime('%d %b %Y')}"
+            if not df.empty:
+                print(f"Rendering weekly recap with {len(df)} broker(s)")
+                path = renderer.render_broker_weekly_recap(df.to_dict("records"), display_range)
+                caption = (
+                    f":trophy: *Weekly Broker Recap — {display_range}*\n\n"
+                    "#IDX #StockMarket #Indonesia #BrokerActivity #SectorsApp"
+                )
+                paths.append((path, caption))
+            else:
+                print("No weekly recap data to render.")
+
+    if args.mode in {"weekly-accumulation", "weekly-distribution", "weekly-bandar"}:
+        week_end = None
+        if args.date_label:
+            try:
+                week_end_dt = datetime.strptime(args.date_label, "%d %B %Y")
+                week_end = week_end_dt.strftime("%Y-%m-%d")
+            except ValueError:
+                week_end = args.date_label
+        if not week_end:
+            latest = fetch_latest_broker_date()
+            if latest:
+                week_end = latest
+        if week_end:
+            week_end_dt = datetime.strptime(week_end, "%Y-%m-%d")
+            week_start_dt = week_end_dt - timedelta(days=4)
+            week_start = week_start_dt.strftime("%Y-%m-%d")
+            if week_start_dt.month == week_end_dt.month:
+                display_range = f"{week_start_dt.strftime('%d')}–{week_end_dt.strftime('%d %B %Y')}"
+            else:
+                display_range = f"{week_start_dt.strftime('%d %b')} – {week_end_dt.strftime('%d %b %Y')}"
+
+            if args.mode == "weekly-accumulation":
+                print(f"Fetching weekly accumulation for {week_start}..{week_end}...")
+                payload = fetch_weekly_accumulation(week_start, week_end)
+                if payload["stocks"]:
+                    print(f"Rendering accumulation with {len(payload['stocks'])} stock(s)")
+                    path = renderer.render_weekly_accumulation(payload, display_range)
+                    caption = (
+                        f":chart_with_upwards_trend: *Most Accumulated — {display_range}*\n\n"
+                        "#IDX #StockMarket #Indonesia #BrokerFlow #SectorsApp"
+                    )
+                    paths.append((path, caption))
+                else:
+                    print("No accumulation data to render.")
+
+            elif args.mode == "weekly-distribution":
+                print(f"Fetching weekly distribution for {week_start}..{week_end}...")
+                payload = fetch_weekly_distribution(week_start, week_end)
+                if payload["stocks"]:
+                    print(f"Rendering distribution with {len(payload['stocks'])} stock(s)")
+                    path = renderer.render_weekly_distribution(payload, display_range)
+                    caption = (
+                        f":chart_with_downwards_trend: *Most Distributed — {display_range}*\n\n"
+                        "#IDX #StockMarket #Indonesia #BrokerFlow #SectorsApp"
+                    )
+                    paths.append((path, caption))
+                else:
+                    print("No distribution data to render.")
+
+            elif args.mode == "weekly-bandar":
+                print(f"Fetching weekly bandar plays for {week_start}..{week_end}...")
+                payload = fetch_weekly_bandar_plays(week_start, week_end)
+                if payload["plays"]:
+                    print(f"Rendering bandar plays with {len(payload['plays'])} play(s)")
+                    path = renderer.render_weekly_bandar_plays(payload, display_range)
+                    caption = (
+                        f":crown: *Bandar of the Week — {display_range}*\n\n"
+                        "#IDX #StockMarket #Indonesia #BrokerActivity #SectorsApp"
+                    )
+                    paths.append((path, caption))
+                else:
+                    print("No bandar plays to render.")
+
     if args.mode in {"news-tier1", "news-tier2"}:
         df = classify_news(load_input(args, "news"))
         if not args.all_news:
@@ -458,7 +625,13 @@ def build_parser():
             "news-tier1",
             "news-tier2",
             "quarterly-low",
-            "companies-mover"
+            "companies-mover",
+            "broker-bandar",
+            "broker-trending",
+            "broker-weekly",
+            "weekly-accumulation",
+            "weekly-distribution",
+            "weekly-bandar",
         ],
         help="Content type to generate.",
     )

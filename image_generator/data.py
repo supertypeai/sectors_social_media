@@ -1,7 +1,10 @@
+from pathlib import Path
+from datetime import date, datetime, timedelta
+
+import pandas as pd
 import json
 import os
-from pathlib import Path
-import pandas as pd
+
 
 FILINGS_COLUMNS = [
     "id",
@@ -179,6 +182,378 @@ def fetch_company_profiles():
     return df.set_index("symbol")["company_name"].to_dict()
 
 
+def fetch_latest_broker_date():
+    df = fetch_supabase_table(
+        "idx_broker_summary_daily",
+        columns="date",
+        order_column="date",
+        limit=1,
+    )
+    if df.empty:
+        return None
+    return str(df["date"].iloc[0])
+
+
+def fetch_broker_bandar_scorecard(target_date: str) -> pd.DataFrame:
+    pages = []
+    page_size = 20000
+    offset = 0
+    while True:
+        def modifier(q, d=target_date, off=offset, ps=page_size):
+            return q.eq("date", d).range(off, off + ps - 1)
+        page = fetch_supabase_table("idx_broker_summary_daily", query_modifier=modifier)
+        if page.empty:
+            break
+        pages.append(page)
+        if len(page) < page_size:
+            break
+        offset += page_size
+
+    if not pages:
+        return pd.DataFrame()
+    df = pd.concat(pages, ignore_index=True)
+    df = df[df["broker_code"] != "--"].reset_index(drop=True)
+    df["gross_idr"] = df["bval"] + df["sval"]
+
+    broker_totals = (
+        df.groupby("broker_code", as_index=False)
+          .agg(gross_idr=("gross_idr", "sum"), net_idr=("nval", "sum"))
+          .sort_values("gross_idr", ascending=False)
+          .head(10)
+          .reset_index(drop=True)
+    )
+    broker_totals["rank"] = broker_totals.index + 1
+
+    top_codes = set(broker_totals["broker_code"])
+    df_top = df[df["broker_code"].isin(top_codes)]
+
+    top_buys = (
+        df_top.sort_values("nval", ascending=False)
+              .groupby("broker_code", as_index=False)
+              .head(1)[["broker_code", "symbol", "nval"]]
+              .rename(columns={"symbol": "top_buy_symbol", "nval": "top_buy_net_idr"})
+    )
+    top_sells = (
+        df_top.sort_values("nval", ascending=True)
+              .groupby("broker_code", as_index=False)
+              .head(1)[["broker_code", "symbol", "nval"]]
+              .rename(columns={"symbol": "top_sell_symbol", "nval": "top_sell_net_idr"})
+    )
+
+    registry = fetch_supabase_table(
+        "idx_broker_registry",
+        columns="broker_code, broker_name, is_foreign, cohort",
+    )
+    profiles = fetch_company_profiles()
+
+    result = broker_totals.merge(registry, on="broker_code", how="left")
+    result = result.merge(top_buys, on="broker_code", how="left")
+    result = result.merge(top_sells, on="broker_code", how="left")
+    result["top_buy_company"] = result["top_buy_symbol"].map(profiles)
+    result["top_sell_company"] = result["top_sell_symbol"].map(profiles)
+
+    return result[[
+        "rank", "broker_code", "broker_name", "is_foreign", "cohort",
+        "gross_idr", "net_idr",
+        "top_buy_symbol", "top_buy_company", "top_buy_net_idr",
+        "top_sell_symbol", "top_sell_company", "top_sell_net_idr",
+    ]]
+
+
+def _fetch_broker_summary_range(start_date: str, end_date: str | None = None) -> pd.DataFrame:
+    pages = []
+    page_size = 20000
+    offset = 0
+    while True:
+        def modifier(q, s=start_date, e=end_date, off=offset, ps=page_size):
+            q = q.gte("date", s)
+            if e:
+                q = q.lte("date", e)
+            return q.range(off, off + ps - 1)
+        page = fetch_supabase_table("idx_broker_summary_daily", query_modifier=modifier)
+        if page.empty:
+            break
+        pages.append(page)
+        if len(page) < page_size:
+            break
+        offset += page_size
+    if not pages:
+        return pd.DataFrame()
+    df = pd.concat(pages, ignore_index=True)
+    return df[df["broker_code"] != "--"].reset_index(drop=True)
+
+
+def fetch_broker_trending_movers(target_date: str) -> dict:
+    df = _fetch_broker_summary_range(target_date, target_date)
+    if df.empty:
+        return {"date": target_date, "stocks": []}
+
+    registry = fetch_supabase_table(
+        "idx_broker_registry",
+        columns="broker_code, broker_name, is_foreign, cohort",
+    )
+    df = df.merge(registry, on="broker_code", how="left")
+    df["gross_idr"] = df["bval"] + df["sval"]
+    df["volume_lots"] = df["blot"] + df["slot"]
+    df["trade_count"] = df["bfreq"] + df["sfreq"]
+
+    stock_stats = df.groupby("symbol", as_index=False).agg(
+        gross_idr=("gross_idr", "sum"),
+        volume_lots=("volume_lots", "sum"),
+        trade_count=("trade_count", "sum"),
+    )
+    foreign_net = (
+        df[df["is_foreign"] == True]
+          .groupby("symbol", as_index=False)
+          .agg(foreign_net=("nval", "sum"))
+    )
+    domestic_net = (
+        df[df["is_foreign"] == False]
+          .groupby("symbol", as_index=False)
+          .agg(domestic_net=("nval", "sum"))
+    )
+    stock_stats = (
+        stock_stats
+          .merge(foreign_net, on="symbol", how="left")
+          .merge(domestic_net, on="symbol", how="left")
+          .fillna({"foreign_net": 0, "domestic_net": 0})
+    )
+
+    top5 = stock_stats.sort_values("gross_idr", ascending=False).head(5).reset_index(drop=True)
+    profiles = fetch_company_profiles()
+    top5["company"] = top5["symbol"].map(profiles)
+
+    stocks = []
+    for _, stock in top5.iterrows():
+        sym = stock["symbol"]
+        sb = (
+            df[df["symbol"] == sym]
+              .groupby(["broker_code", "broker_name", "is_foreign", "cohort"], as_index=False, dropna=False)
+              .agg(net_idr=("nval", "sum"), gross_idr=("gross_idr", "sum"))
+        )
+        buyers = sb[sb["net_idr"] > 0].sort_values("net_idr", ascending=False).head(3)
+        sellers = sb[sb["net_idr"] < 0].sort_values("net_idr", ascending=True).head(3)
+        stocks.append({
+            "symbol": sym,
+            "company": stock["company"],
+            "gross_idr": float(stock["gross_idr"]),
+            "foreign_net": float(stock["foreign_net"]),
+            "domestic_net": float(stock["domestic_net"]),
+            "volume_lots": int(stock["volume_lots"]),
+            "trade_count": int(stock["trade_count"]),
+            "buyers": buyers.to_dict("records"),
+            "sellers": sellers.to_dict("records"),
+        })
+
+    return {"date": target_date, "stocks": stocks}
+
+
+def fetch_weekly_accumulation(week_start: str, week_end: str) -> dict:
+    return _fetch_weekly_flow_top5(week_start, week_end, ascending=False)
+
+
+def fetch_weekly_distribution(week_start: str, week_end: str) -> dict:
+    return _fetch_weekly_flow_top5(week_start, week_end, ascending=True)
+
+
+def _fetch_weekly_flow_top5(week_start: str, week_end: str, ascending: bool) -> dict:
+    df = _fetch_broker_summary_range(week_start, week_end)
+    if df.empty:
+        return {"date_range": (week_start, week_end), "stocks": []}
+
+    registry = fetch_supabase_table(
+        "idx_broker_registry",
+        columns="broker_code, broker_name, is_foreign, cohort",
+    )
+    df = df.merge(registry, on="broker_code", how="left")
+    df["gross_idr"] = df["bval"] + df["sval"]
+    df["trade_count"] = df["bfreq"] + df["sfreq"]
+
+    # Per-stock foreign vs domestic net (sum of nval, signed)
+    flow = df.groupby("symbol").apply(
+        lambda g: pd.Series({
+            "foreign_net": g.loc[g["is_foreign"] == True, "nval"].sum(),
+            "domestic_net": g.loc[g["is_foreign"] == False, "nval"].sum(),
+        }),
+        include_groups=False,
+    ).reset_index()
+
+    stats = df.groupby("symbol", as_index=False).agg(
+        gross_idr=("gross_idr", "sum"),
+        trade_count=("trade_count", "sum"),
+    )
+    stock_stats = stats.merge(flow, on="symbol", how="left").fillna(
+        {"foreign_net": 0, "domestic_net": 0}
+    )
+
+    top5 = stock_stats.sort_values("foreign_net", ascending=ascending).head(5)
+    profiles = fetch_company_profiles()
+
+    # Per-(broker, stock) weekly net — needed for top broker chips
+    bs = df.groupby(
+        ["broker_code", "broker_name", "is_foreign", "cohort", "symbol"],
+        as_index=False, dropna=False,
+    ).agg(broker_stock_net=("nval", "sum"))
+
+    stocks = []
+    for _, stock in top5.iterrows():
+        sym = stock["symbol"]
+        sub_bs = bs[(bs["symbol"] == sym) & (bs["is_foreign"] == True)]
+
+        if ascending:  # distribution → top foreign sellers
+            tops = (
+                sub_bs[sub_bs["broker_stock_net"] < 0]
+                .sort_values("broker_stock_net", ascending=True)
+                .head(3)
+                .rename(columns={"broker_stock_net": "net_idr"})
+            )
+            key = "sellers"
+        else:  # accumulation → top foreign buyers
+            tops = (
+                sub_bs[sub_bs["broker_stock_net"] > 0]
+                .sort_values("broker_stock_net", ascending=False)
+                .head(3)
+                .rename(columns={"broker_stock_net": "net_idr"})
+            )
+            key = "buyers"
+
+        stocks.append({
+            "symbol": sym,
+            "company": profiles.get(sym),
+            "foreign_net": float(stock["foreign_net"]),
+            "domestic_net": float(stock["domestic_net"]),
+            "gross_idr": float(stock["gross_idr"]),
+            "trade_count": int(stock["trade_count"]),
+            key: tops[["broker_code", "broker_name", "is_foreign", "cohort", "net_idr"]].to_dict("records"),
+        })
+
+    return {"date_range": (week_start, week_end), "stocks": stocks}
+
+
+def fetch_weekly_bandar_plays(week_start: str, week_end: str) -> dict:
+    df = _fetch_broker_summary_range(week_start, week_end)
+    if df.empty:
+        return {"date_range": (week_start, week_end), "plays": []}
+
+    df["gross_idr"] = df["bval"] + df["sval"]
+
+    pair_net = df.groupby(["broker_code", "symbol"], as_index=False).agg(pair_net=("nval", "sum"))
+    top3 = pair_net[pair_net["pair_net"] > 0].sort_values("pair_net", ascending=False).head(3).reset_index(drop=True)
+
+    broker_totals = df.groupby("broker_code", as_index=False).agg(
+        broker_total_gross=("gross_idr", "sum"),
+        broker_total_net=("nval", "sum"),
+    )
+    df_pos = df[df["nval"] > 0]
+    broker_buying = df_pos.groupby("broker_code", as_index=False).agg(broker_total_buying=("nval", "sum"))
+    stock_buying = df_pos.groupby("symbol", as_index=False).agg(stock_total_buying=("nval", "sum"))
+
+    registry = fetch_supabase_table(
+        "idx_broker_registry",
+        columns="broker_code, broker_name, is_foreign, cohort",
+    )
+    profiles = fetch_company_profiles()
+
+    plays = []
+    for _, play in top3.iterrows():
+        bc = play["broker_code"]
+        sym = play["symbol"]
+        net = float(play["pair_net"])
+
+        bb = broker_buying.loc[broker_buying["broker_code"] == bc, "broker_total_buying"]
+        bb_val = float(bb.iloc[0]) if not bb.empty else 0.0
+        concentration = (net / bb_val * 100.0) if bb_val > 0 else 0.0
+
+        sb = stock_buying.loc[stock_buying["symbol"] == sym, "stock_total_buying"]
+        sb_val = float(sb.iloc[0]) if not sb.empty else 0.0
+        stock_share = (net / sb_val * 100.0) if sb_val > 0 else 0.0
+
+        bt = broker_totals[broker_totals["broker_code"] == bc]
+        bt_gross = float(bt["broker_total_gross"].iloc[0]) if not bt.empty else 0.0
+        bt_net = float(bt["broker_total_net"].iloc[0]) if not bt.empty else 0.0
+
+        reg = registry[registry["broker_code"] == bc]
+        if not reg.empty:
+            broker_name = reg["broker_name"].iloc[0]
+            is_foreign = bool(reg["is_foreign"].iloc[0]) if reg["is_foreign"].iloc[0] is not None else False
+            cohort = reg["cohort"].iloc[0]
+        else:
+            broker_name = bc
+            is_foreign = False
+            cohort = "Mixed"
+
+        plays.append({
+            "broker_code": bc,
+            "broker_name": broker_name,
+            "is_foreign": is_foreign,
+            "cohort": cohort,
+            "symbol": sym,
+            "company": profiles.get(sym),
+            "net_idr": net,
+            "concentration_pct": min(concentration, 100.0),
+            "stock_share_pct": min(stock_share, 100.0),
+            "broker_total_gross": bt_gross,
+            "broker_total_net": bt_net,
+        })
+
+    return {"date_range": (week_start, week_end), "plays": plays}
+
+
+def fetch_broker_weekly_recap(week_start: str, week_end: str, prior_start: str, prior_end: str) -> pd.DataFrame:
+    this_df = _fetch_broker_summary_range(week_start, week_end)
+    prior_df = _fetch_broker_summary_range(prior_start, prior_end)
+    if this_df.empty:
+        return pd.DataFrame()
+
+    this_df["gross_idr"] = this_df["bval"] + this_df["sval"]
+    this_totals = (
+        this_df.groupby("broker_code", as_index=False)
+               .agg(week_gross_idr=("gross_idr", "sum"), week_net_idr=("nval", "sum"))
+               .sort_values("week_gross_idr", ascending=False)
+               .reset_index(drop=True)
+    )
+    this_totals["this_rank"] = this_totals.index + 1
+
+    if not prior_df.empty:
+        prior_df["gross_idr"] = prior_df["bval"] + prior_df["sval"]
+        prior_totals = (
+            prior_df.groupby("broker_code", as_index=False)
+                    .agg(prior_week_gross_idr=("gross_idr", "sum"))
+                    .sort_values("prior_week_gross_idr", ascending=False)
+                    .reset_index(drop=True)
+        )
+        prior_totals["prior_rank"] = prior_totals.index + 1
+    else:
+        prior_totals = pd.DataFrame(columns=["broker_code", "prior_week_gross_idr", "prior_rank"])
+
+    merged = this_totals.merge(
+        prior_totals[["broker_code", "prior_week_gross_idr", "prior_rank"]],
+        on="broker_code",
+        how="left",
+    )
+
+    def _label(row):
+        if pd.isna(row["prior_rank"]):
+            return "NEW"
+        shift = int(row["prior_rank"]) - int(row["this_rank"])
+        if shift > 0:
+            return f"UP {shift}"
+        if shift < 0:
+            return f"DOWN {-shift}"
+        return "SAME"
+
+    merged["rank_shift"] = merged["prior_rank"] - merged["this_rank"]
+    merged["rank_change_label"] = merged.apply(_label, axis=1)
+
+    registry = fetch_supabase_table(
+        "idx_broker_registry",
+        columns="broker_code, broker_name, is_foreign, cohort",
+    )
+    merged = merged.merge(registry, on="broker_code", how="left")
+
+    return merged[merged["this_rank"] <= 5].sort_values("this_rank").reset_index(drop=True)
+
+
 def fetch_workflow_data(
     columns: str,
     table_name: str = "idx_workflow_data", 
@@ -190,7 +565,7 @@ def fetch_workflow_data(
         columns=columns,
          query_modifier=lambda query: query.or_(
             ",".join(f"{column_name}.not.is.null" for column_name in required_columns)
-        ),
+        )
     )
 
     if is_output_json:
@@ -203,7 +578,7 @@ def fetch_company_report():
     company_report_df = fetch_supabase_table(
         table_name="idx_company_report",
         columns="symbol, market_cap",
-        query_modifier=lambda query: query.lte("market_cap_rank", 50),
+        query_modifier=lambda query: query.lte("market_cap_rank", 50)
     )
 
     return company_report_df
@@ -235,8 +610,115 @@ def fetch_ihsg_weekly_data():
         query_modifier=lambda query: query
             .eq("index_code", "IHSG")
             .order("date", desc=True)
-            .limit(6),
+            .limit(6)
     )
 
     return ihsg_df.to_dict(orient="records")
 
+
+def fetch_agm_data():
+    df_compro = fetch_supabase_table(
+        "idx_company_report",
+        columns="symbol,company_name,market_cap_rank",
+        query_modifier=lambda q: q.lte("market_cap_rank", 300),
+    )
+
+    df_agm = fetch_supabase_table("idx_agm")
+
+    if df_agm.empty or df_compro.empty:
+        return pd.DataFrame()
+
+    now = pd.Timestamp.now().normalize()
+    seven_days_ago = (now - pd.Timedelta(days=7)).strftime("%Y-%m-%d")
+    today = now.strftime("%Y-%m-%d")
+
+    df_agm = (
+        df_agm[
+            (df_agm["agm_date"] >= seven_days_ago)
+            & (df_agm["updated_on"] >= today)
+            & (df_agm["summary"].notna())
+            & (df_agm["symbol"].isin(df_compro["symbol"]))
+        ]
+        .sort_values("agm_date", ascending=False)
+    )
+
+    if df_agm.empty:
+        return df_agm
+
+    df_agm = df_agm.merge(df_compro, on="symbol", how="left")
+    
+    return df_agm.sort_values("agm_date", ascending=False).reset_index(drop=True)
+
+
+def fetch_idx_upcoming_dividend(to_df: bool) -> pd.DataFrame | list[dict]:
+    today = date.today().isoformat()
+
+    idx_upcoming_dividend = fetch_supabase_table(
+        table_name='idx_upcoming_dividend',
+        query_modifier=lambda query: query 
+            .gt("cum_date", today)
+            .order("updated_on", desc=False)
+    )
+
+    if to_df:
+        return idx_upcoming_dividend 
+    
+    return idx_upcoming_dividend.to_dict(orient="records")
+
+
+def fetch_upcoming_dividends():
+    lookback = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+
+    df_div = fetch_idx_upcoming_dividend(to_df=True)
+
+    if df_div.empty:
+        return df_div
+
+    symbols = df_div["symbol"].tolist()
+    df_daily = fetch_supabase_table(
+        "idx_daily_data",
+        columns="symbol,close,date",
+        since_column="date",
+        since_value=lookback,
+        order_column="date",
+        order_desc=True,
+        query_modifier=lambda q: q.in_("symbol", symbols),
+    )
+
+    if not df_daily.empty and "symbol" in df_daily.columns:
+        df_daily = df_daily.drop_duplicates(subset="symbol", keep="first")
+
+    df = df_div.merge(df_daily, on="symbol", how="left")
+    df["dividend_yield"] = df["dividend_amount"] / df["close"]
+    return df.sort_values("cum_date").reset_index(drop=True)
+
+
+def fetch_idx_company_report(symbols: list[str]) -> list[dict]:
+    columns = [
+        'symbol, historical_dividends, yield_ttm, dividend_ttm, '
+        'sector, last_ex_dividend_date, dividend_yield_avg, company_name'
+    ]
+
+    idx_company_report = fetch_supabase_table(
+        table_name='idx_company_report',
+        columns=columns,
+        query_modifier=lambda query: query.in_("symbol", symbols)
+    )
+
+    return idx_company_report.to_dict(orient='records')
+
+
+def fetch_idx_daily_data(symbol: str, from_date: str) -> list[dict]:
+    idx_daily_data = fetch_supabase_table(
+        table_name='idx_daily_data',
+        query_modifier=lambda query: query
+            .eq("symbol", symbol)
+            .gte("date", from_date)
+            .order("date", desc=False)
+    )
+
+    return [
+        {"date": record["date"], "close": record["close"]}
+        for record in idx_daily_data.to_dict(orient="records")
+        if record.get("close") is not None
+    ]
