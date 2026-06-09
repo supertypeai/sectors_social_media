@@ -10,13 +10,15 @@ except ImportError:
 
 from .classification import (
     classify_news,
-    drop_mixed_leg_filings,
     filter_daily_filings,
-    filter_plain_filings,
     filter_recent_news,
     filter_tagged_filings,
-    group_becoming_insider,
     group_context_filings,
+)
+from .insider_patterns import (
+    drop_mixed_leg_filings,
+    filter_plain_filings,
+    group_becoming_insider,
     group_insider_chains,
     group_insider_clusters,
     group_insider_cross,

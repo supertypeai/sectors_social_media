@@ -23,7 +23,7 @@ from ..render import (
     format_shares,
     clean_slug,
 )
-from ..classification import parse_price_transactions
+from ..insider_patterns import parse_price_transactions
 
 
 class InsiderEarningsRendererMixin:

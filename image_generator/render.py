@@ -7,7 +7,7 @@ import os
 import requests
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
-from .classification import parse_price_transactions
+from .insider_patterns import parse_price_transactions
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
