@@ -217,7 +217,7 @@ class QuarterlyRenderer(SocialImageRenderer):
         draw = ImageDraw.Draw(image)
         image_width, _ = image.size
 
-        self.render_title_section(draw, image_width)
+        self.render_title_section(data, draw, image_width)
         self.render_main_section(draw, data, image_width, image)
         self.render_footer_section(draw, image_width)
 

@@ -201,7 +201,7 @@ def select_quarterly_data(
 def get_closest_price_to_date(
     daily_records: list[dict],
     target_date: str
-) -> Optional[float]:
+) -> float | None:
     if not daily_records:
         return None
 
@@ -232,7 +232,7 @@ def compute_yield_growth(
     current_yield: float,
     historical_dividends: dict,
     announcement_year: int
-) -> Optional[float]:
+) -> float | None:
     sorted_years = sorted(historical_dividends.keys())
 
     prior_year = None
@@ -250,6 +250,7 @@ def compute_yield_growth(
     if not prior_year_total_yield:
         return None
 
+    print(f'prior year yield: {prior_year_total_yield}')
     return (current_yield - prior_year_total_yield) / prior_year_total_yield
 
 
@@ -297,6 +298,8 @@ def prepare_data_upcoming_dividend(
             continue
 
         current_yield = dividend_amount / close_price
+        print(f'symbol: {symbol} | close price: {close_price} | current yield: {current_yield}')
+
         yield_growth = compute_yield_growth(
             current_yield, historical_dividends, announcement_year
         )

@@ -785,12 +785,12 @@ class DividendRenderer(SocialImageRenderer):
         )
 
         if is_highest_dividend:
-            second_title = "Highest dividend"
+            second_title = "Highest dividend yield"
             second_prefix = "in the "
             second_bold = f"last {year_count} years"
 
         else:
-            second_title = "Dividend still below"
+            second_title = "Dividend yield still below"
             second_prefix = "historical peak"
             second_bold = ""
             
@@ -839,7 +839,7 @@ class DividendRenderer(SocialImageRenderer):
         )
 
         column_1_x = title_x
-        column_2_x = card_x + int(465 * scale)
+        column_2_x = card_x + int(425 * scale)
         column_3_x = card_x + int(745 * scale)
         body_y = card_y + int(64 * scale)
 
@@ -868,7 +868,7 @@ class DividendRenderer(SocialImageRenderer):
         )
         draw.text(
             (column_1_x + int(24 * scale), body_y),
-            "Dividend increased",
+            "Dividend yield growth",
             font=body_font,
             fill=text,
         )
