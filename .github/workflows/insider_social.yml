@@ -1,0 +1,130 @@
+name: Generate and Post Insider Signals & Stories
+
+# Two feeds off ONE detection engine (see memory: signal-vs-story-direction):
+#   * SIGNAL (leading)  — fresh cluster/chain completions, fired the day they
+#                         qualify. Freshness-gated, no market-move claim.
+#   * STORY  (hindsight)— the same patterns at T+3/6/9mo checkpoints, gated on
+#                         |move| >= 15%, copy is honest about whether the move
+#                         validated the insiders (contradicting moves DO post).
+#
+# Dedup across runs is handled CLI-side by the trigger layer's state store —
+# a committed JSON file at state/posted_insider.json. The "Persist post state"
+# step pushes the updated state back after each non-dry-run, so the next run
+# knows what already posted.
+
+on:
+  schedule:
+    # SIGNAL feed — weekday nights 20:00 WIB (13:00 UTC). Runs after the trading
+    # day so it captures all of the day's filings, and lands in Slack for an
+    # evening post. Mon–Fri only so leading signals don't post into a weekend.
+    - cron: '0 13 * * 1-5'
+
+    # STORY feed — Sunday night 20:00 WIB (13:00 UTC) so the hindsight story is
+    # staged in Slack ahead of a Monday post. Sunday also avoids any overlap with
+    # the Mon–Fri signal runs (no state-write race). Fires only for patterns that
+    # crossed a 3/6/9-month checkpoint in the last week.
+    - cron: '0 13 * * 0'
+
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Feed to generate'
+        required: true
+        default: 'filings-signal'
+        type: choice
+        options:
+          - filings-signal
+          - filings-story
+      channel:
+        description: 'Slack channel/DM ID (paste U... for a DM to yourself, default = #visuals)'
+        required: false
+        default: 'C04RC79U5NK'
+      dry_run:
+        description: 'Skip Slack upload (generate PNGs only, downloadable as artifact)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+jobs:
+  generate_and_post:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # push the updated dedup state back to the repo
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libharfbuzz-dev libfribidi-dev
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Resolve run mode
+        id: resolve_mode
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "mode=${{ github.event.inputs.mode }}" >> "$GITHUB_OUTPUT"
+            echo "channel=${{ github.event.inputs.channel || 'C04RC79U5NK' }}" >> "$GITHUB_OUTPUT"
+            if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+              echo "dry_run=--dry-run" >> "$GITHUB_OUTPUT"
+            else
+              echo "dry_run=" >> "$GITHUB_OUTPUT"
+            fi
+
+          elif [ "${{ github.event.schedule }}" = "0 13 * * 1-5" ]; then
+            echo "mode=filings-signal" >> "$GITHUB_OUTPUT"
+            echo "channel=C04RC79U5NK" >> "$GITHUB_OUTPUT"
+            echo "dry_run=" >> "$GITHUB_OUTPUT"
+
+          elif [ "${{ github.event.schedule }}" = "0 13 * * 0" ]; then
+            echo "mode=filings-story" >> "$GITHUB_OUTPUT"
+            echo "channel=C04RC79U5NK" >> "$GITHUB_OUTPUT"
+            echo "dry_run=" >> "$GITHUB_OUTPUT"
+
+          else
+            echo "Unknown trigger"
+            exit 1
+          fi
+
+      - name: Run Insider Signal/Story Generator
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        run: |
+          python -m image_generator.cli \
+            --mode "${{ steps.resolve_mode.outputs.mode }}" \
+            --slack-channel "${{ steps.resolve_mode.outputs.channel }}" \
+            --max-posts 2 \
+            ${{ steps.resolve_mode.outputs.dry_run }}
+
+      - name: Upload generated PNGs as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: insider-cards-${{ steps.resolve_mode.outputs.mode }}
+          path: output/
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Persist post state
+        if: ${{ steps.resolve_mode.outputs.dry_run == '' }}
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add state/posted_insider.json
+          git commit -m "chore: update insider post state [skip ci]" || { echo "no state change"; exit 0; }
+          git push

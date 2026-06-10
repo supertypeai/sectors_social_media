@@ -9,6 +9,7 @@ import re
 import ast
 
 
+
 ROOT_DIR = Path(__file__).resolve().parents[1]
 BACKGROUND_DIR = ROOT_DIR / "background"
 OUTPUT_DIR = ROOT_DIR / "output"
@@ -261,6 +262,24 @@ def currency_idr(value):
     return f"IDR {value:,.0f}"
 
 
+def format_shares(value):
+    """Format a raw share count as a compact suffixed string, e.g. 14_284_746 -> '14.28M'."""
+    if value is None or str(value).lower() in {"nan", "none", ""}:
+        return "-"
+    try:
+        value = float(value)
+    except Exception:
+        return "-"
+
+    if abs(value) >= 1_000_000_000:
+        return f"{value / 1_000_000_000:,.2f}B"
+    if abs(value) >= 1_000_000:
+        return f"{value / 1_000_000:,.2f}M"
+    if abs(value) >= 1_000:
+        return f"{value / 1_000:,.2f}K"
+    return f"{value:,.0f}"
+
+
 def format_idr_short(value, signed=False):
     if value is None or str(value).lower() in {"nan", "none", ""}:
         return "-"
@@ -370,6 +389,9 @@ def clean_title(text):
     return text
 
 
+from .renderers.insider_dark import InsiderEarningsRendererMixin
+
+
 def clean_headline(text):
     if not text:
         return ""
@@ -394,7 +416,28 @@ CATEGORY_SHORT = {
 }
 
 
-class SocialImageRenderer:
+class SocialImageRenderer(InsiderEarningsRendererMixin):
+    CLUSTER_COLORS = {
+        "buy": "#5BAA5A",
+        "sell": "#D53E4F",
+        "market": "#3288BD",
+        "avg": "#6D5FA6",
+    }
+    CLUSTER_PALETTE = ["#3288BD", "#66C2A5", "#ABDDA4", "#FDAE61", "#F46D43", "#D53E4F", "#5E4FA2"]
+    # Palette for dark-bg multi-stock charts — avoids greens & oranges reserved for buy/sell rings
+    CROSS_DARK_PALETTE = ["#4FC3F7", "#CE93D8", "#FFD54F", "#F48FB1", "#80CBC4", "#B39DDB", "#4DD0E1"]
+
+    # Colors for the dark IDX Fillings background variant
+    IDX_CHAIN_COLORS = {
+        "buy": "#A6D94E",
+        "sell": "#F46D43",
+        "market": "#3288BD",
+        "avg": "#FDAE61",
+    }
+    # Shared card style for dark background: near-black neutral, 30% opacity
+    IDX_DARK_CARD_FILL = (20, 20, 24, 77)
+    IDX_DARK_BORDER = "#28282e"
+
     def __init__(self, background_dir=BACKGROUND_DIR, output_dir=OUTPUT_DIR):
         self.background_dir = Path(background_dir)
         self.output_dir = Path(output_dir)
@@ -513,9 +556,13 @@ class SocialImageRenderer:
         x, y = xy
         fnt = font("Inter-Bold.ttf", font_size)
         bbox = draw.textbbox((0, 0), text, font=fnt)
-        draw.rounded_rectangle((x, y, x + bbox[2] + 32, y + font_size + 20), radius=14, fill=fill)
-        draw.text((x + 16, y + 8), text, font=fnt, fill=text_fill)
-        return x + bbox[2] + 44
+        pad_x, pad_y = 22, 11
+        height = font_size + pad_y * 2
+        width = bbox[2] + pad_x * 2
+        draw.rounded_rectangle((x, y, x + width, y + height), radius=height // 2, fill=fill)
+        draw.text((x + pad_x, y + pad_y - 1), text, font=fnt, fill=text_fill)
+        return x + width + 12
+
 
     def _metric(self, draw, xy, label, value, width, accent=COLORS["orange"]):
         x, y = xy
@@ -538,7 +585,16 @@ class SocialImageRenderer:
         image = self._open("News - Insider Trading.png")
         draw = ImageDraw.Draw(image)
         w, h = image.size
-        margin = int(w * 0.08)
+        # Align the white cards with the template's INSIDER TRADING badge (its
+        # left border sits at ~12.4% of width, not the usual 8%), so the badge,
+        # the cards, and the date all share the same left/right edges.
+        margin = int(w * 0.124)
+
+        # Date this digest covers (the filing day): right edge flush with the
+        # card edge, vertically centered on the template badge.
+        if date_label:
+            draw.text((w - margin, 240), str(date_label), font=font("Inter-Medium.ttf", 28),
+                      fill=COLORS["muted"], anchor="rm")
 
         rows = list(filings)[:4]
         y = 360
@@ -546,7 +602,12 @@ class SocialImageRenderer:
         card_h = 300  # Dipotong sedikit (dari 320)
 
         for i, row in enumerate(rows):
-            is_buy = "buy" in str(row.get("title", "")).lower() or "purchase" in str(row.get("title", "")).lower()
+            txn_type = str(row.get("transaction_type", "")).strip().lower()
+            if txn_type in {"buy", "sell"}:
+                is_buy = txn_type == "buy"
+            else:
+                title_text = str(row.get("title", "")).lower()
+                is_buy = "buy" in title_text or "purchase" in title_text
             accent_color = COLORS["green"] if is_buy else COLORS["red"]
             chip_bg = "#e6f4ea" if is_buy else "#fce8e8"
             
@@ -568,19 +629,22 @@ class SocialImageRenderer:
             symbol_fnt = font("Inter-SemiBold.ttf", 36)
             draw.text((inner_x, curr_y), symbol_text, font=symbol_fnt, fill=COLORS["ink"])
             
-            status_text = "â†— BUY" if is_buy else "â†˜ SELL"
+            status_text = "BUY" if is_buy else "SELL"
             chip_x = inner_x + draw.textlength(symbol_text, font=symbol_fnt) + 20
-            self._chip(draw, (chip_x, curr_y - 2), status_text, fill=chip_bg, text_fill=accent_color, font_size=24)
+            chip_y = curr_y - 2
+            chip_fnt = font("Inter-Bold.ttf", 24)
+            arrow_size, pad, gap = 13, 16, 8
+            text_w = draw.textlength(status_text, font=chip_fnt)
+            chip_h = 24 + 20
+            chip_w = pad + arrow_size + gap + text_w + pad
+            draw.rounded_rectangle((chip_x, chip_y, chip_x + chip_w, chip_y + chip_h), radius=14, fill=chip_bg)
+            self._trend_arrow(draw, (chip_x + pad, chip_y + (chip_h - arrow_size) // 2), up=is_buy, size=arrow_size, fill=accent_color, weight=3)
+            draw.text((chip_x + pad + arrow_size + gap, chip_y + 8), status_text, font=chip_fnt, fill=accent_color)
             
             # Holder Name (SemiBold, diperkecil 3 -> 25)
             curr_y += 55
             holder = row.get("holder_name") or "Individual/Institution"
             draw.text((inner_x, curr_y), holder, font=font("Inter-SemiBold.ttf", 25), fill=COLORS["soft_ink"])
-            
-            # Title/Context (Regular, 22)
-            curr_y += 35
-            context = row.get("title_summarized") or clean_title(row.get("title", "Filing Transaction"))
-            draw.text((inner_x, curr_y), context[:60] + ("..." if len(context) > 60 else ""), font=font("Inter-Regular.ttf", 22), fill=COLORS["muted"])
 
             # Value (Top Right, SemiBold, diperkecil 2: 32 -> 30, format suffix + titik ribuan)
             val_label = "Transaction Value"
@@ -591,35 +655,37 @@ class SocialImageRenderer:
             draw.text((w - margin - 40 - draw.textlength(val_text, font=font("Inter-SemiBold.ttf", 30)), y + 65), val_text, font=font("Inter-SemiBold.ttf", 30), fill=COLORS["ink"])
 
             # Divider (posisi disesuaikan dengan card_h baru)
-            draw.line((inner_x, y + 165, w - margin - 40, y + 165), fill="#acacac", width=1)
+            divider_y = y + 138
+            draw.line((inner_x, divider_y, w - margin - 40, divider_y), fill="#acacac", width=1)
             
             # Metadata Row (Medium, font diperkecil 4: 28 -> 24)
-            meta_y = y + 185
+            meta_y = divider_y + 22
             col_w = (w - margin * 2 - 170) // 4
             
             # Price fallback
             price_val = row.get("price")
             
             metas = [
-                ("Shares (M)", f"{row.get('share_percentage_transaction', 0):.2f}"),
+                ("Shares", format_shares(row.get("amount_transaction"))),
                 ("Price", currency_idr(price_val)),
-                ("Before", f"{row.get('share_percentage_before', 0):.2f}%"),
-                ("After", f"{row.get('share_percentage_after', 0):.2f}%")
+                ("Before", f"{(row.get('share_percentage_before') or 0):.2f}%"),
+                ("After", f"{(row.get('share_percentage_after') or 0):.2f}%")
             ]
-            
+
             for j, (label, value) in enumerate(metas):
                 col_x = inner_x + (j * col_w)
                 draw.text((col_x, meta_y), label, font=font("Inter-Regular.ttf", 20), fill=COLORS["muted"])
                 draw.text((col_x, meta_y + 35), value, font=font("Inter-Medium.ttf", 24), fill=COLORS["ink"])
-                
+
                 # Add tiny arrow for "After"
                 if label == "After":
-                    arrow = "â†—" if is_buy else "â†˜"
-                    draw.text((col_x + draw.textlength(value, font=font("Inter-Medium.ttf", 24)) + 10, meta_y + 35), arrow, font=font("Inter-Medium.ttf", 24), fill=accent_color)
+                    val_w = draw.textlength(value, font=font("Inter-Medium.ttf", 24))
+                    self._trend_arrow(draw, (col_x + val_w + 12, meta_y + 42), up=is_buy, size=13, fill=accent_color, weight=3)
 
             y += card_h + card_gap
 
         return self._save(image, filename)
+
 
     def render_context_filing(self, group, filename=None):
         latest = group["latest"]
@@ -666,7 +732,16 @@ class SocialImageRenderer:
         self._metric(draw, (margin, y), "Ownership", f"{pct(latest.get('share_percentage_before'))} -> {pct(latest.get('share_percentage_after'))}", metric_w, COLORS["pink"])
         holders = ", ".join(group.get("holders") or ["-"])
         self._metric(draw, (margin + metric_w + 40, y), "Holders", holders[:30] + ("..." if len(holders) > 30 else ""), metric_w, COLORS["muted"])
-        
+
+        # Price chart with buy/sell markers
+        chart = self._cluster_chart(symbol, group.get("transactions", []))
+        if chart:
+            target_w = w - 2 * margin
+            ratio = target_w / float(chart.width)
+            chart = chart.resize((target_w, int(chart.height * ratio)), Image.Resampling.LANCZOS)
+            chart_y = y + 200
+            image.paste(chart, (margin, chart_y), chart)
+
         pattern_slug = pattern.lower().replace(" ", "_")
         return self._save(image, filename or f"filing_context_{group.get('symbol')}_{pattern_slug}.png")
 

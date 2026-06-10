@@ -1,12 +1,13 @@
+import ast
+import bisect
+import json
+import re
 from datetime import timedelta, date
-from typing import Optional 
-
-from .data import fetch_idx_daily_data
+from typing import Optional
 
 import pandas as pd
-import ast
-import json
-import bisect 
+
+from .data import fetch_idx_daily_data
 
 
 IMPORTANT_FILINGS_TAGS = {
@@ -68,6 +69,15 @@ def parse_tags(value):
     return []
 
 
+
+
+
+
+
+
+EXCLUDED_PLAIN_FILINGS_TAGS = {"mesop", "takeover"}
+
+
 def extract_context_pattern(context):
     text = str(context or "").lower()
     if "bought" in text or "buy" in text:
@@ -98,6 +108,10 @@ def filter_daily_filings(df, now=None, hours=24, min_transaction_value=100_000_0
     ].sort_values("transaction_value", ascending=False)
 
 
+
+
+
+
 def group_context_filings(df):
     if df.empty or "context" not in df.columns:
         return []
@@ -123,9 +137,12 @@ def group_context_filings(df):
     return sorted(groups, key=lambda row: row["latest"].get("created_at") or pd.Timestamp.min, reverse=True)
 
 
+MAX_SANE_PRICE = 1_000_000  # IDR/share; guards against corrupt price_transaction rows
+
 def filter_tagged_filings(df):
     df = add_parsed_tags(df)
     if df.empty:
+        return df
         return df
     df["created_at"] = pd.to_datetime(df["created_at"], utc=True, errors="coerce")
     mask = df["tags_parsed"].apply(lambda tags: bool(set(tags) & IMPORTANT_FILINGS_TAGS))
@@ -315,4 +332,3 @@ def prepare_data_upcoming_dividend(
         })
 
     return enriched_reports
-

@@ -1,0 +1,103 @@
+name: Generate and Post Becoming-Insider Crossings
+
+# Standalone feed — independent of insider_social.yml (cluster/chain/cross).
+# A "becoming insider" event = a buy filing that crosses 5% ownership
+# (share_percentage_before < 5 <= after). It's a LEADING, one-time conviction
+# signal ("X just became a 5% owner"), so it's freshness-gated (crossing within
+# the last 7 days) and never carries a market-move claim.
+#
+# Dedup is CLI-side via its OWN state store — state/posted_becoming.json — keyed
+# on becoming:<holder>:<symbol>. The "Persist post state" step commits it back so
+# the next run knows what already posted. Separate file = no race with the other
+# insider/earnings workflows.
+
+on:
+  schedule:
+    # Weekday nights 20:30 WIB (13:30 UTC) — staggered 30min after the insider
+    # signal run so the two feeds don't post into #visuals at the same instant.
+    # Mon–Fri only so a leading crossing doesn't post into a closed-market weekend.
+    - cron: '30 13 * * 1-5'
+
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Slack channel/DM ID (paste U... for a DM to yourself, default = #visuals)'
+        required: false
+        default: 'C04RC79U5NK'
+      dry_run:
+        description: 'Skip Slack upload (generate PNGs only, downloadable as artifact)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+jobs:
+  generate_and_post:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # push the updated dedup state back to the repo
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libharfbuzz-dev libfribidi-dev
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Resolve channel / dry-run
+        id: resolve
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "channel=${{ github.event.inputs.channel || 'C04RC79U5NK' }}" >> "$GITHUB_OUTPUT"
+            if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+              echo "dry_run=--dry-run" >> "$GITHUB_OUTPUT"
+            else
+              echo "dry_run=" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "channel=C04RC79U5NK" >> "$GITHUB_OUTPUT"
+            echo "dry_run=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run Becoming-Insider Generator
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        run: |
+          python -m image_generator.cli \
+            --mode filings-becoming \
+            --slack-channel "${{ steps.resolve.outputs.channel }}" \
+            --max-posts 2 \
+            ${{ steps.resolve.outputs.dry_run }}
+
+      - name: Upload generated PNGs as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: becoming-insider-cards
+          path: output/
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Persist post state
+        if: ${{ steps.resolve.outputs.dry_run == '' }}
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add state/posted_becoming.json
+          git commit -m "chore: update becoming-insider post state [skip ci]" || { echo "no state change"; exit 0; }
+          git push
