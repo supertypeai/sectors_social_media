@@ -98,6 +98,53 @@ def _dedupe_symbol_dir(fires):
     return kept, dropped
 
 
+# Slack only renders an upload as a channel MESSAGE when it carries an
+# initial_comment; a bare file just lands in Files/Media. So every feed post gets
+# a branded caption, matching the broker/dividend/AGM posts.
+_TAGS = "#IDX #StockMarket #Indonesia"
+
+
+def _extend_captioned(paths, rp, caption):
+    """Append a carousel's slides as (path, caption) tuples. Slide 1 carries the
+    full caption + hashtags; extra slides get the title line only, so a 2-slide
+    carousel doesn't repeat the hashtag block."""
+    title = caption.split("\n", 1)[0]
+    for i, slide in enumerate(rp):
+        paths.append((slide, caption if i == 0 else title))
+
+
+def _insider_caption(p, feed):
+    sym = str(p.get("base_symbol") or p.get("symbol") or "").upper()
+    direction = str(p.get("direction") or "").lower()
+    kind = p.get("kind")
+    if kind == "cross":
+        holder = p.get("holder_name") or "One insider"
+        n = len(p.get("stocks") or [])
+        across = f"{n} stocks" if n else "multiple stocks"
+        title = f":arrows_counterclockwise: *{holder} trading across {across}*"
+    elif kind == "chain":
+        holder = p.get("holder_name") or "An insider"
+        verb = "bought" if direction == "buy" else "sold"
+        title = f":link: *{holder} {verb} {sym} repeatedly*"
+    else:  # cluster
+        word = "accumulation" if direction == "buy" else "distribution"
+        title = f":busts_in_silhouette: *Insider {word} cluster — {sym}*"
+    feedtag = "#InsiderStory" if feed == "story" else "#InsiderSignal"
+    return f"{title}\n\n{_TAGS} {feedtag} #SectorsApp"
+
+
+def _becoming_caption(e):
+    sym = str(e.get("base_symbol") or e.get("symbol") or "").upper()
+    holder = e.get("holder_name") or "An insider"
+    return f":star2: *{holder} crossed 5% ownership in {sym}*\n\n{_TAGS} #InsiderTrading #SectorsApp"
+
+
+def _earnings_caption(s):
+    sym = str(s.get("base_symbol") or s.get("symbol") or "").upper()
+    word = "jumped" if s.get("direction") == "spike" else "fell"
+    return f":zap: *{sym} — quarterly profit {word}*\n\n{_TAGS} #Earnings #SectorsApp"
+
+
 def load_input(args, kind):
     if args.input:
         return load_records(args.input)
@@ -185,7 +232,7 @@ def generate(args):
                     print(f"Render failed for signal {p['kind']} {p.get('base_symbol')}/{p.get('direction')}: {e}")
                     continue
                 rendered.append((p, rp))
-                paths.extend(rp)
+                _extend_captioned(paths, rp, _insider_caption(p, "signal"))
         else:  # filings-story
             def _price_fetcher(symbol, completed):
                 since = (completed - timedelta(days=14)).strftime("%Y-%m-%d")
@@ -215,7 +262,7 @@ def generate(args):
                     print(f"Render failed for story {p['kind']} {p.get('base_symbol')}/{p.get('direction')}: {e}")
                     continue
                 rendered.append((p, rp))
-                paths.extend(rp)
+                _extend_captioned(paths, rp, _insider_caption(p, "story"))
 
         if args.dry_run:
             print(f"[dry-run] {len(paths)} image(s) generated; state NOT updated")
@@ -272,7 +319,7 @@ def generate(args):
                 print(f"Render failed for becoming {e.get('base_symbol')}/{e.get('holder_name')}: {ex}")
                 continue
             rendered.append((e, rp))
-            paths.extend(rp)
+            _extend_captioned(paths, rp, _becoming_caption(e))
 
         if args.dry_run:
             print(f"[dry-run] {len(paths)} image(s) generated; state NOT updated")
@@ -314,7 +361,7 @@ def generate(args):
                 print(f"Render failed for earnings {s.get('base_symbol')}/{s.get('direction')}: {ex}")
                 continue
             rendered.append((s, rp))
-            paths.extend(rp)
+            _extend_captioned(paths, rp, _earnings_caption(s))
 
         if args.dry_run:
             print(f"[dry-run] {len(paths)} image(s) generated; state NOT updated")
@@ -347,7 +394,9 @@ def generate(args):
                 run_day = (datetime.strptime(args.run_date, "%Y-%m-%d")
                            if args.run_date else datetime.utcnow() + timedelta(hours=7))
                 filing_day_label = (run_day - timedelta(days=1)).strftime("%d %B %Y")
-                paths.append(renderer.render_daily_filings(rows, filing_day_label))
+                caption = (f":memo: *Daily insider filings — {filing_day_label}*\n\n"
+                           f"{_TAGS} #InsiderTrading #SectorsApp")
+                paths.append((renderer.render_daily_filings(rows, filing_day_label), caption))
             else:
                 print("No plain filings for yesterday — nothing to post.")
         elif args.mode == "filings-daily":

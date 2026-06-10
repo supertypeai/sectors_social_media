@@ -54,7 +54,9 @@ def upload_posts_to_slack(posts: list, slack_channel: str | None = None):
                 file=str(resolved),
                 initial_comment=caption,
             )
-            uploaded.append(item)
+            # Return the path (not the whole item) so callers can match uploaded
+            # slides whether they passed bare paths or (path, caption) tuples.
+            uploaded.append(path)
 
         except Exception as error:
             print(f"Slack error: {error}")
