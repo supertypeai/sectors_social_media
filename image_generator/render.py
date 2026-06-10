@@ -8,7 +8,6 @@ import requests
 import re
 import ast
 
-from .insider_patterns import parse_price_transactions
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
