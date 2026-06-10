@@ -148,9 +148,7 @@ def generate(args):
         carousel_cap = max(1, (args.max_posts or 4) // 2)  # 2 slides per carousel
 
         # Keep each carousel's paths together so we can persist state ONLY for
-        # carousels whose slides actually uploaded (a swallowed Slack error must
-        # not burn a dedup key — see upload_posts_to_slack).
-        rendered = []  # list of (pattern, [slide_paths])
+        rendered = []  
         dropped = []   # same (symbol, direction) runners-up suppressed this run
         if args.mode == "filings-signal":
             # Cross (holder rotation) rides the SIGNAL feed only — never the story

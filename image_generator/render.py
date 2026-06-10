@@ -1,4 +1,4 @@
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+﻿from PIL import Image, ImageDraw, ImageFont, ImageOps
 from io import BytesIO
 from pathlib import Path
 from urllib.parse import urlparse
@@ -736,75 +736,6 @@ class SocialImageRenderer(InsiderEarningsRendererMixin):
 
         pattern_slug = pattern.lower().replace(" ", "_")
         return self._save(image, filename or f"filing_context_{group.get('symbol')}_{pattern_slug}.png")
-
-
-
-
-
-
-
-
-
-
-
-
-
-    # ------------------------------------------------------------------
-    # Cluster carousel (3 slides on the Insider-trading background)
-    # ------------------------------------------------------------------
-
-
-
-
-
-
-
-
-
-
-
-
-    # ------------------------------------------------------------------
-    # Insider CHAIN carousel — ONE holder trading ONE stock repeatedly.
-    # Same visual family as the cluster carousel (pills / header / stat cards),
-    # but the story is one person's conviction over time: cadence + cost basis
-    # (slide 1) and the position they stacked up + their stake (slide 2).
-    # ------------------------------------------------------------------
-
-
-
-
-
-    # ------------------------------------------------------------------
-    # Dark-theme chain carousel (IDX Fillings background)
-    # ------------------------------------------------------------------
-
-
-
-    # ------------------------------------------------------------------
-    # Insider CROSS-STOCK card — ONE holder active across >=2 stocks.
-    # Single image (no price chart — multiple stocks); the story is breadth /
-    # rotation, shown as a basket of value bars colored by direction.
-    # ------------------------------------------------------------------
-
-
-    # =====================================================================
-    # Shared dark-bg primitives for the new post types
-    # =====================================================================
-
-
-
-
-    # ---------------------------------------------------------------------
-    # BECOMING INSIDER (5% crossing) — dark two-slide carousel
-    # ---------------------------------------------------------------------
-
-
-
-    # ---------------------------------------------------------------------
-    # EARNINGS SPIKE — dark two-slide carousel
-    # ---------------------------------------------------------------------
-
 
     def render_tagged_filing(self, filing, filename=None):
         image = self._open("News - Insider Trading.png")

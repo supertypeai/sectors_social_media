@@ -137,70 +137,7 @@ def group_context_filings(df):
     return sorted(groups, key=lambda row: row["latest"].get("created_at") or pd.Timestamp.min, reverse=True)
 
 
-# ---------------------------------------------------------------------------
-# Multi-holder clusters (the proper "cluster" pattern):
-#   >= 3 DISTINCT insiders buying/selling the SAME symbol inside a rolling
-#   6-month window. Mirrors the upstream rule that generates the
-#   "N insiders bought <SYM> in the last 6 months." context strings.
-# ---------------------------------------------------------------------------
-
 MAX_SANE_PRICE = 1_000_000  # IDR/share; guards against corrupt price_transaction rows
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# ---------------------------------------------------------------------------
-# Single-holder chains (the "chain" pattern):
-#   ONE insider trading the SAME symbol+direction repeatedly inside a rolling
-#   6-month window. Pivots on the HOLDER (cluster pivots on the symbol).
-#   Mirrors the upstream "Nth insider buy by <HOLDER> in the last 6 months."
-# ---------------------------------------------------------------------------
-
-
-
-
-
-
-
-
-# ---------------------------------------------------------------------------
-# Becoming-insider (the "5% crossing" pattern):
-#   A holder whose stake crosses the 5% substantial-shareholder threshold
-#   upward via accumulation. Pivots on the milestone; the story is "X just
-#   became a substantial shareholder of COMPANY." OJK/IDX rule: >=5% ownership
-#   makes you a reportable substantial shareholder.
-# ---------------------------------------------------------------------------
-
-
-
-
-
-
-# ---------------------------------------------------------------------------
-# Cross-stock holders (the "cross" pattern):
-#   ONE insider trading >= `min_symbols` DISTINCT symbols inside a trailing
-#   6-month window. Pivots on the holder; the story is breadth / rotation.
-#   Mirrors "<HOLDER> bought <SYM> and <OTHER> in the last 6 months."
-# ---------------------------------------------------------------------------
-
-
-
 
 def filter_tagged_filings(df):
     df = add_parsed_tags(df)
