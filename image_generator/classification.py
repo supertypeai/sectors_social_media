@@ -141,8 +141,8 @@ MAX_SANE_PRICE = 1_000_000  # IDR/share; guards against corrupt price_transactio
 
 def filter_tagged_filings(df):
     df = add_parsed_tags(df)
-    df = add_parsed_tags(df)
     if df.empty:
+        return df
         return df
     df["created_at"] = pd.to_datetime(df["created_at"], utc=True, errors="coerce")
     mask = df["tags_parsed"].apply(lambda tags: bool(set(tags) & IMPORTANT_FILINGS_TAGS))
