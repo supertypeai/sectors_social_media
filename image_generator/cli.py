@@ -343,7 +343,11 @@ def generate(args):
                 rows = rows[: args.limit]
             print(f"Plain filings (yesterday, no context, not MESOP/takeover): {len(rows)} row(s)")
             if rows:
-                paths.append(renderer.render_daily_filings(rows, date_label(args.date_label)))
+                # Label with the filing day (yesterday in WIB), not the run day.
+                run_day = (datetime.strptime(args.run_date, "%Y-%m-%d")
+                           if args.run_date else datetime.utcnow() + timedelta(hours=7))
+                filing_day_label = (run_day - timedelta(days=1)).strftime("%d %B %Y")
+                paths.append(renderer.render_daily_filings(rows, filing_day_label))
             else:
                 print("No plain filings for yesterday — nothing to post.")
         elif args.mode == "filings-daily":

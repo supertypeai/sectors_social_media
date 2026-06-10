@@ -586,7 +586,16 @@ class SocialImageRenderer(InsiderEarningsRendererMixin):
         image = self._open("News - Insider Trading.png")
         draw = ImageDraw.Draw(image)
         w, h = image.size
-        margin = int(w * 0.08)
+        # Align the white cards with the template's INSIDER TRADING badge (its
+        # left border sits at ~12.4% of width, not the usual 8%), so the badge,
+        # the cards, and the date all share the same left/right edges.
+        margin = int(w * 0.124)
+
+        # Date this digest covers (the filing day): right edge flush with the
+        # card edge, vertically centered on the template badge.
+        if date_label:
+            draw.text((w - margin, 240), str(date_label), font=font("Inter-Medium.ttf", 28),
+                      fill=COLORS["muted"], anchor="rm")
 
         rows = list(filings)[:4]
         y = 360
