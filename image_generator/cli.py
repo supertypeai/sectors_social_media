@@ -106,6 +106,11 @@ def load_input(args, kind):
         if since is None:
             if args.mode in FEED_LOOKBACK_DAYS:
                 since = (datetime.now() - timedelta(days=FEED_LOOKBACK_DAYS[args.mode])).isoformat()
+            elif args.mode == "filings-plain":
+                # Window is "yesterday" by filing timestamp, but some of yesterday's
+                # filings are scraped a day or two late — fetch a small created_at
+                # buffer so they're present before the timestamp filter runs.
+                since = (datetime.now() - timedelta(days=5)).isoformat()
             elif args.mode in WINDOW_MODES:
                 since = (datetime.now() - timedelta(days=220)).isoformat()
         return fetch_filings(since=since)
@@ -329,12 +334,18 @@ def generate(args):
         df = load_input(args, "filings")
 
         if args.mode == "filings-plain":
-            filtered = filter_plain_filings(df, hours=args.hours)
+            # Morning feed: yesterday's plain insider filings by event timestamp.
+            # run_date (a WIB-naive "YYYY-MM-DD") lets us replay a past day; None
+            # = live WIB now. filter_plain_filings parses it.
+            filtered = filter_plain_filings(df, now=args.run_date or None)
             rows = filtered.to_dict("records")
             if args.limit:
                 rows = rows[: args.limit]
-            print(f"Plain filings (no context, not MESOP/takeover): {len(rows)} row(s)")
-            paths.append(renderer.render_daily_filings(rows, date_label(args.date_label)))
+            print(f"Plain filings (yesterday, no context, not MESOP/takeover): {len(rows)} row(s)")
+            if rows:
+                paths.append(renderer.render_daily_filings(rows, date_label(args.date_label)))
+            else:
+                print("No plain filings for yesterday — nothing to post.")
         elif args.mode == "filings-daily":
             filtered = filter_daily_filings(df, hours=args.hours)
             rows = filtered.to_dict("records")

@@ -87,21 +87,37 @@ def _is_empty(value):
 def filter_plain_filings(
     df,
     now=None,
-    hours=24,
 ):
-    """Plain insider-trading filings: no context and not MESOP/takeover.
+    """Plain insider-trading filings from the PREVIOUS WIB day: insider buy/sell,
+    no context, not MESOP/takeover.
 
-    This is the "compiled presentation" bucket. The `highlights` column is not
-    part of this filter — confirmed not applicable.
+    Keyed on `timestamp` (the actual filing event, stored naive in WIB) over a
+    full previous-calendar-day window — NOT `created_at`/scrape-time. This feed
+    is meant to run in the morning and show a COMPLETE picture of *yesterday*:
+    only ~67% of a day's filings are scraped by 20:00 the same day (filings run
+    well into the evening, scrape lag ~2-4h), so a same-night "today" window
+    would silently miss ~1/3 of them. By the next morning, yesterday's evening
+    filings have been scraped overnight, so "yesterday" is complete.
+
+    `now` is the run moment (defaults to WIB now); the window is the WIB calendar
+    day immediately before it. The `highlights` column is not part of this
+    filter — confirmed not applicable.
     """
     df = add_parsed_tags(df)
     if df.empty:
         return df
 
-    df["created_at"] = pd.to_datetime(df["created_at"], utc=True, errors="coerce")
+    # Filing event time is stored naive, already in WIB.
+    filing_ts = pd.to_datetime(df["timestamp"], errors="coerce")
+
+    # "Yesterday" in WIB relative to the run moment.
     if now is None:
-        now = pd.Timestamp.now(tz="UTC")
-    since = now - timedelta(hours=hours)
+        now = pd.Timestamp.now(tz="Asia/Jakarta")
+    now = pd.Timestamp(now)
+    if now.tzinfo is not None:
+        now = now.tz_convert("Asia/Jakarta").tz_localize(None)
+    target_day = (now - pd.Timedelta(days=1)).date()
+    on_target_day = filing_ts.dt.date == target_day
 
     context_empty = (
         df["context"].apply(_is_empty)
@@ -123,7 +139,7 @@ def filter_plain_filings(
     )
 
     return df[
-        (df["created_at"] >= since)
+        on_target_day
         & context_empty
         & insider
         & trading

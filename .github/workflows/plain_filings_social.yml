@@ -1,0 +1,95 @@
+name: Generate and Post Plain Insider Filings
+
+# Morning digest of YESTERDAY's plain insider filings — a single card listing
+# the prior day's insider buy/sell filings that have NO context attached and are
+# NOT tagged mesop/takeover. (mode: filings-plain)
+#
+# Why a MORNING run posting *yesterday* (not a night run posting "today"):
+# filings run well into the evening and the scraper lags ~2-4h, so only ~67% of a
+# day's filings are in the DB by 20:00 the same day. A same-night "today" window
+# would silently drop ~1/3 of them. By the next morning, yesterday's evening
+# filings have been scraped overnight, so "yesterday" is complete. The CLI filters
+# on the filing `timestamp` (WIB) for the previous calendar day.
+#
+# No dedup state: the window is a fixed calendar day, so each scheduled run posts
+# a distinct day. A manual re-run on the same day would re-post — run dispatch with
+# dry_run=true if you just want to preview.
+
+on:
+  schedule:
+    # 07:00 WIB (00:00 UTC), Tue–Sat. Each morning posts the PRIOR trading day:
+    # Tue->Mon, Wed->Tue, ... Sat->Fri. Mon/Sun are skipped (they'd post a weekend
+    # with no filings — the run would no-op anyway via the 0-row guard).
+    - cron: '0 0 * * 2-6'
+
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Slack channel/DM ID (paste U... for a DM to yourself, default = #visuals)'
+        required: false
+        default: 'C04RC79U5NK'
+      dry_run:
+        description: 'Skip Slack upload (generate PNGs only, downloadable as artifact)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+jobs:
+  generate_and_post:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libharfbuzz-dev libfribidi-dev
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Resolve channel / dry-run
+        id: resolve
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "channel=${{ github.event.inputs.channel || 'C04RC79U5NK' }}" >> "$GITHUB_OUTPUT"
+            if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+              echo "dry_run=--dry-run" >> "$GITHUB_OUTPUT"
+            else
+              echo "dry_run=" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "channel=C04RC79U5NK" >> "$GITHUB_OUTPUT"
+            echo "dry_run=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run Plain Filings Generator
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        run: |
+          python -m image_generator.cli \
+            --mode filings-plain \
+            --slack-channel "${{ steps.resolve.outputs.channel }}" \
+            --max-posts 1 \
+            ${{ steps.resolve.outputs.dry_run }}
+
+      - name: Upload generated PNGs as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: plain-filings-cards
+          path: output/
+          if-no-files-found: warn
+          retention-days: 7
