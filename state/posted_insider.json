@@ -1,4 +1,11 @@
 {
-  "signals": {},
+  "signals": {
+    "chain:george oetomo:TAPG:buy": {
+      "completed_date": "2026-06-10",
+      "completing_filing_id": 3797,
+      "posted_at": "2026-06-10",
+      "progress_count": 7
+    }
+  },
   "stories": {}
 }

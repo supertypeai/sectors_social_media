@@ -1,4 +1,5 @@
 from pathlib import Path
+from datetime import date 
 
 from .renderers.quarterly import QuarterlyRenderer
 from .renderers.top_movers import TopCompaniesMoversRenderer
@@ -21,6 +22,7 @@ from .data import (
     fetch_upcoming_dividends
 )
 from .utils.slack import upload_posts_to_slack 
+from .utils.io_helper import load_dividend_state, save_dividend_state
 
 import typer
 
@@ -145,7 +147,7 @@ def dividend(
 ):
     renderer = DividendRenderer(output_dir=output)
     upcoming_dividends = fetch_idx_upcoming_dividend(to_df=False)
-
+    
     if not upcoming_dividends:
         typer.echo("Skipping dividend: upcoming dividend data is null")
         raise typer.Exit(code=0)
@@ -164,7 +166,21 @@ def dividend(
         typer.echo("Skipping dividend: payload to render is null")
         raise typer.Exit(code=0)
 
+    state = load_dividend_state()
+    posted_keys = set(state["dividends"])
+    
+    payload = [
+        record 
+        for record in payload
+        if f"{record['symbol']}:{record['ex_date']}" not in posted_keys
+    ]
+
+    if not payload:
+        typer.echo("Skipping dividend: all records already posted")
+        raise typer.Exit(code=0)
+
     paths = []
+    path_to_record = {}
 
     for record in payload:
         symbol = record["symbol"].replace(".JK", "")
@@ -180,13 +196,26 @@ def dividend(
         )
 
         paths.append((path, caption))
-    
+        path_to_record[path] = record
+
     if slack_channel:
-        upload_posts_to_slack(
-            paths,
-            slack_channel=slack_channel,
+        uploaded = upload_posts_to_slack(
+            paths, slack_channel=slack_channel
         )
 
+        for path, _ in uploaded:
+            record = path_to_record[path]
+
+            key = f"{record['symbol']}:{record['ex_date']}"
+            state["dividends"][key] = {
+                "posted_at": date.today().isoformat(),
+                "symbol": record["symbol"],
+                "ex_date": record["ex_date"],
+            }
+
+        if uploaded:
+            save_dividend_state(state)
+    
 
 if __name__ == "__main__":
     app()
