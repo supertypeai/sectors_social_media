@@ -1,0 +1,53 @@
+name: Generate and Post Volume Spike
+
+on:
+  schedule:
+    # Every weekday at 16:30 WIB (after IDX close) = 09:30 UTC
+    - cron: '0 12 * * 1-5'
+
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Slack channel/DM ID, default = #visuals'
+        required: false
+        default: 'C04RC79U5NK'
+
+jobs:
+  generate_and_post:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libharfbuzz-dev libfribidi-dev
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Volume Spike Image Generator
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        run: |
+          CHANNEL="${{ github.event.inputs.channel || 'C04RC79U5NK' }}"
+          python -m image_generator.workflow_cli volume-spike --slack-channel "$CHANNEL"
+
+      - name: Upload generated PNGs as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: volume-spike-cards
+          path: output/volume_spike_*.png
+          if-no-files-found: warn
+          retention-days: 7

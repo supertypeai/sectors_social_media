@@ -1,6 +1,6 @@
 from pathlib import Path
 from datetime import date, datetime, timedelta
-
+import numpy as np
 import pandas as pd
 import json
 import os
@@ -706,6 +706,174 @@ def fetch_idx_company_report(symbols: list[str]) -> list[dict]:
     )
 
     return idx_company_report.to_dict(orient='records')
+
+
+def fetch_anomaly_data():
+    today           = pd.Timestamp.now().normalize().strftime("%Y-%m-%d")
+    thirty_days_ago = (pd.Timestamp.now().normalize() - pd.Timedelta(days=30)).strftime("%Y-%m-%d")
+
+    df_compro = fetch_supabase_table(
+        "idx_company_report",
+        columns="symbol,company_name,market_cap_rank,sub_sector",
+        query_modifier=lambda q: q.lte("market_cap_rank", 300),
+    )
+    if df_compro.empty:
+        return {}
+
+    df_daily = fetch_supabase_table(
+        "idx_daily_data",
+        columns="symbol,close,date,market_cap,volume,foreign_sell_volume,foreign_buy_volume",
+        since_column="date",
+        since_value=thirty_days_ago,
+        query_modifier=lambda q: q.in_("symbol", df_compro["symbol"].tolist()),
+    )
+    if df_daily.empty:
+        return {}
+
+    conditions = [
+        df_daily["foreign_buy_volume"] > df_daily["foreign_sell_volume"],
+        df_daily["foreign_buy_volume"] < df_daily["foreign_sell_volume"],
+    ]
+    df_daily["foreign_activity"]   = np.select(conditions, ["Net Buy", "Net Sell"], default="Neutral")
+    df_daily["foreign_net_volume"] = df_daily["foreign_buy_volume"] - df_daily["foreign_sell_volume"]
+
+    df_daily_change = (
+        df_daily.sort_values("date")
+        .groupby("symbol")
+        .tail(2)
+        .groupby("symbol")
+        .apply(lambda g: pd.Series({
+            "daily_close_change":  (g["close"].iloc[-1] - g["close"].iloc[-2]) / g["close"].iloc[-2],
+            "latest_date":         g["date"].iloc[-1],
+            "market_cap":          g["market_cap"].iloc[-1],
+            "foreign_activity":    g["foreign_activity"].iloc[-1],
+            "foreign_net_volume":  g["foreign_net_volume"].iloc[-1],
+        }), include_groups=False)
+        .reset_index()
+    )
+
+    df_compro = df_compro.merge(df_daily_change, on="symbol", how="left")
+
+    df_subsec = (
+        df_compro.groupby("sub_sector")
+        .agg({"daily_close_change": "mean"})
+        .reset_index()
+        .sort_values("daily_close_change", ascending=False)
+    )
+
+    merge_df = df_compro.merge(df_subsec, on="sub_sector")
+    merge_df["daily_close_change_delta"] = (
+        merge_df["daily_close_change_x"] - merge_df["daily_close_change_y"]
+    )
+
+    filtered_df = merge_df[abs(merge_df["daily_close_change_delta"]) >= 0.15].sort_values(
+        "daily_close_change_delta", ascending=False
+    ).rename(columns={
+        "daily_close_change_x": "daily_close_change",
+        "daily_close_change_y": "sub_sector_avg_change",
+    })
+
+    return {
+        "filtered_df": filtered_df.reset_index(drop=True),
+        "df_daily":    df_daily,
+    }
+
+
+def _close_change(df, days):
+    ref = (
+        df[["symbol", "date", "close"]]
+        .rename(columns={"close": f"close_{days}d_ago", "date": "ref_date"})
+    )
+    df_lookup = df.copy()
+    df_lookup["ref_date"] = df_lookup["date"] - pd.Timedelta(days=days)
+    return (
+        pd.merge_asof(
+            df_lookup.sort_values("ref_date").reset_index(drop=True),
+            ref.sort_values("ref_date").reset_index(drop=True),
+            on="ref_date", by="symbol", direction="backward",
+        )
+        .drop(columns=["ref_date"])
+        .sort_values(["symbol", "date"])
+    )
+
+
+def fetch_volume_spike_data():
+    df_compro = fetch_supabase_table(
+        "idx_company_report",
+        columns="symbol,company_name,market_cap_rank",
+        query_modifier=lambda q: q.lte("market_cap_rank", 100),
+    )
+    if df_compro.empty:
+        return {}
+
+    thirty_days_ago = (pd.Timestamp.now().normalize() - pd.Timedelta(days=30)).strftime("%Y-%m-%d")
+
+    df_daily = fetch_supabase_table(
+        "idx_daily_data",
+        columns="symbol,close,date,volume,foreign_sell_volume,foreign_buy_volume",
+        since_column="date",
+        since_value=thirty_days_ago,
+        query_modifier=lambda q: q.in_("symbol", df_compro["symbol"].tolist()),
+    )
+    if df_daily.empty:
+        return {}
+
+    df_daily["date"] = pd.to_datetime(df_daily["date"])
+    latest_date     = df_daily["date"].max()
+    df_daily_last   = df_daily[df_daily["date"] == latest_date].copy()
+    df_daily_others = df_daily[df_daily["date"] != latest_date].copy()
+
+    df_daily = _close_change(df_daily, 1)
+    df_daily = _close_change(df_daily, 3)
+    df_daily = _close_change(df_daily, 7)
+    for d in (1, 3, 7):
+        df_daily[f"close_change_{d}d"] = (
+            (df_daily["close"] - df_daily[f"close_{d}d_ago"]) / df_daily[f"close_{d}d_ago"]
+        )
+    df_daily = df_daily.drop(columns=["close_1d_ago", "close_3d_ago", "close_7d_ago"])
+
+    vol_stats = (
+        df_daily_others
+        .groupby("symbol")[["volume", "foreign_buy_volume", "foreign_sell_volume"]]
+        .median()
+        .reset_index()
+        .rename(columns={
+            "volume": "avg_volume",
+            "foreign_buy_volume": "avg_foreign_buy_volume",
+            "foreign_sell_volume": "avg_foreign_sell_volume",
+        })
+    )
+
+    df_spike = df_daily_last.merge(vol_stats, on="symbol", how="left")
+    df_spike["volume_ratio"] = df_spike["volume"] / df_spike["avg_volume"]
+    df_spike = df_spike[
+        (df_spike["volume_ratio"] >= 3) & (df_spike["avg_volume"] > 0)
+    ].sort_values("volume_ratio", ascending=False)
+
+    df_spike["foreign_activity"] = np.select(
+        [
+            df_spike["foreign_buy_volume"] > df_spike["foreign_sell_volume"],
+            df_spike["foreign_buy_volume"] < df_spike["foreign_sell_volume"],
+        ],
+        ["Net Buy", "Net Sell"],
+        default="Neutral",
+    )
+    df_spike = df_spike.merge(
+        df_daily[["symbol", "date", "close_change_1d", "close_change_3d", "close_change_7d"]],
+        on=["symbol", "date"], how="left",
+    )
+
+    df_latest_7 = (
+        df_daily.sort_values(["symbol", "date"])
+        .groupby("symbol").tail(7)
+    )[["symbol", "date", "volume"]]
+
+    return {
+        "df_spike":    df_spike.reset_index(drop=True),
+        "df_latest_7": df_latest_7.reset_index(drop=True),
+        "df_history":  df_daily_others.reset_index(drop=True),
+        "compro_df":   df_compro,
+    }
 
 
 def fetch_idx_daily_data(symbol: str, from_date: str) -> list[dict]:

@@ -6,6 +6,8 @@ from .renderers.top_movers import TopCompaniesMoversRenderer
 from .renderers.upcoming_dividend import UpcomingDividendRenderer
 from .renderers.agm import AGMRenderer
 from .renderers.dividend import DividendRenderer
+from .renderers.volume_spike import VolumeSpikeRenderer
+from .renderers.anomalies_changes import AnomalyChangesRenderer
 from .utils.slack import upload_posts_to_slack
 from .classification import (
     prepare_data_by_mcap, 
@@ -13,13 +15,15 @@ from .classification import (
     prepare_data_upcoming_dividend
 )
 from .data import (
-    fetch_company_report, 
-    fetch_workflow_data, 
+    fetch_company_report,
+    fetch_workflow_data,
     fetch_ihsg_weekly_data,
-    fetch_idx_company_report, 
+    fetch_idx_company_report,
     fetch_idx_upcoming_dividend,
-    fetch_agm_data, 
-    fetch_upcoming_dividends
+    fetch_agm_data,
+    fetch_upcoming_dividends,
+    fetch_volume_spike_data,
+    fetch_anomaly_data,
 )
 from .utils.slack import upload_posts_to_slack 
 from .utils.io_helper import load_dividend_state, save_dividend_state
@@ -216,6 +220,60 @@ def dividend(
         if uploaded:
             save_dividend_state(state)
     
+
+@app.command("volume-spike")
+def volume_spike(
+    output: Path = typer.Option(Path("output"), "--output", "-o"),
+    slack_channel: str | None = typer.Option(None, "--slack-channel"),
+):
+    renderer = VolumeSpikeRenderer(output_dir=output)
+
+    data = fetch_volume_spike_data()
+    if not data or data["df_spike"].empty:
+        typer.echo("Skipping volume-spike: no spikes detected today")
+        raise typer.Exit(code=0)
+
+    typer.echo(f"Rendering {len(data['df_spike'])} volume spike card(s)...")
+    paths = renderer.render(data=data)
+    for path in paths:
+        typer.echo(path.resolve())
+
+    if slack_channel:
+        posts = [
+            (path, "Volume Spike Alert\n\n#IDX #StockMarket #Indonesia #VolumeSpike #SectorsApp")
+            for path in paths
+        ]
+        upload_posts_to_slack(posts, slack_channel=slack_channel)
+
+
+@app.command("anomaly-changes")
+def anomaly_changes(
+    output: Path = typer.Option(Path("output"), "--output", "-o"),
+    slack_channel: str | None = typer.Option(None, "--slack-channel"),
+):
+    renderer = AnomalyChangesRenderer(output_dir=output)
+
+    data = fetch_anomaly_data()
+    if not data or data["filtered_df"].empty:
+        typer.echo("Skipping anomaly-changes: no anomalies detected today")
+        raise typer.Exit(code=0)
+
+    df = data["filtered_df"]
+    n_up   = int((df["daily_close_change_delta"] > 0).sum())
+    n_down = int((df["daily_close_change_delta"] < 0).sum())
+    typer.echo(f"Rendering anomaly cards ({n_up} gainers, {n_down} losers)...")
+
+    paths = renderer.render(data=data)
+    for path in paths:
+        typer.echo(path.resolve())
+
+    if slack_channel:
+        posts = [
+            (path, "Anomaly Movers — Stocks outperforming or underperforming peers by 15%+\n\n#IDX #StockMarket #Indonesia #SectorsApp")
+            for path in paths
+        ]
+        upload_posts_to_slack(posts, slack_channel=slack_channel)
+
 
 if __name__ == "__main__":
     app()
