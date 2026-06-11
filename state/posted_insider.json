@@ -5,6 +5,24 @@
       "completing_filing_id": 3797,
       "posted_at": "2026-06-10",
       "progress_count": 7
+    },
+    "chain:hasmoro:HEAL:buy": {
+      "completed_date": "2026-06-08",
+      "completing_filing_id": 3774,
+      "posted_at": "2026-06-11",
+      "progress_count": 8
+    },
+    "chain:khiat yulisar:HEAL:buy": {
+      "completed_date": "2026-06-11",
+      "completing_filing_id": 3817,
+      "posted_at": "2026-06-11",
+      "progress_count": 4
+    },
+    "cluster:HEAL:buy": {
+      "completed_date": "2026-06-11",
+      "completing_filing_id": 3817,
+      "posted_at": "2026-06-11",
+      "progress_count": 3
     }
   },
   "stories": {}
