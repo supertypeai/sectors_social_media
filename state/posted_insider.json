@@ -23,6 +23,12 @@
       "completing_filing_id": 3817,
       "posted_at": "2026-06-11",
       "progress_count": 3
+    },
+    "cluster:SMDR:buy": {
+      "completed_date": "2026-06-12",
+      "completing_filing_id": 3829,
+      "posted_at": "2026-06-12",
+      "progress_count": 3
     }
   },
   "stories": {}
