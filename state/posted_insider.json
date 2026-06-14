@@ -31,5 +31,63 @@
       "progress_count": 3
     }
   },
-  "stories": {}
+  "stories": {
+    "chain:bhadaiwi mochamad:SOLA:buy:3mo": {
+      "move": null,
+      "posted_at": "2026-06-14",
+      "skipped": true
+    },
+    "chain:cheah edwin hong yew:MDIY:buy:3mo": {
+      "move": null,
+      "posted_at": "2026-06-14",
+      "skipped": true
+    },
+    "chain:madhani nusantara talatah:DEWA:sell:3mo": {
+      "move": null,
+      "posted_at": "2026-06-14"
+    },
+    "chain:madhani nusantara talatah:DEWA:sell:6mo": {
+      "move": null,
+      "posted_at": "2026-06-14"
+    },
+    "chain:madhani nusantara talatah:DEWA:sell:9mo": {
+      "move": 1.2788,
+      "posted_at": "2026-06-14"
+    },
+    "chain:pangestu prajogo:BRPT:buy:3mo": {
+      "move": null,
+      "posted_at": "2026-06-14",
+      "skipped": true
+    },
+    "cluster:CDIA:buy:3mo": {
+      "move": null,
+      "posted_at": "2026-06-14",
+      "skipped": true
+    },
+    "cluster:MAPB:sell:3mo": {
+      "move": null,
+      "posted_at": "2026-06-14",
+      "skipped": true
+    },
+    "cluster:MAPB:sell:6mo": {
+      "move": null,
+      "posted_at": "2026-06-14",
+      "skipped": true
+    },
+    "cluster:MDIY:buy:3mo": {
+      "move": null,
+      "posted_at": "2026-06-14",
+      "skipped": true
+    },
+    "cluster:SOLA:buy:3mo": {
+      "move": null,
+      "posted_at": "2026-06-14",
+      "skipped": true
+    },
+    "cluster:TOWR:sell:3mo": {
+      "move": null,
+      "posted_at": "2026-06-14",
+      "skipped": true
+    }
+  }
 }
