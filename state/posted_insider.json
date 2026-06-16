@@ -1,5 +1,11 @@
 {
   "signals": {
+    "chain:andri hutama putra:CYBR:sell": {
+      "completed_date": "2026-06-16",
+      "completing_filing_id": 3853,
+      "posted_at": "2026-06-16",
+      "progress_count": 6
+    },
     "chain:dannacher patrick rudolf:CYBR:buy": {
       "completed_date": "2026-06-15",
       "completing_filing_id": 3850,
@@ -23,6 +29,12 @@
       "completing_filing_id": 3817,
       "posted_at": "2026-06-11",
       "progress_count": 4
+    },
+    "cluster:CYBR:sell": {
+      "completed_date": "2026-06-16",
+      "completing_filing_id": 3853,
+      "posted_at": "2026-06-16",
+      "progress_count": 3
     },
     "cluster:HEAL:buy": {
       "completed_date": "2026-06-11",
