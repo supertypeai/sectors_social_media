@@ -57,7 +57,7 @@ jobs:
             echo "mode=${{ github.event.inputs.mode }}" >> "$GITHUB_OUTPUT"
             echo "channel=${{ github.event.inputs.channel || 'C04RC79U5NK' }}" >> "$GITHUB_OUTPUT"
           
-          elif [ "${{ github.event.schedule }}" = "0 13 * * 5'" ]; then
+          elif [ "${{ github.event.schedule }}" = "0 13 * * 5" ]; then
             echo "mode=quarterly" >> "$GITHUB_OUTPUT"
             echo "channel=C04RC79U5NK" >> "$GITHUB_OUTPUT"
 
