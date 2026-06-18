@@ -1,16 +1,9 @@
 name: Generate and Post Workflow
 
 on:
-  schedule:
-    # Every Friday at 20:00 WIB = 13:00 UTC
-    - cron: '0 13 * * 5'
-
-    # Top movers monthly card: first day of month 19:00 WIB = 12:00 UTC
-    - cron: '0 12 1 * *'
-
-    # Dividend (with historical) card: daily 19:00 WIB = 12:00 UTC
-    - cron: '0 12 * * *'
-
+  # Scheduled trigger lives in cron-job.org (calls workflow_dispatch via GitHub REST API).
+  # GH Actions cron suffered 5h+ queue drift; cron-job.org gives sub-minute precision.
+  # Multi-mode (quarterly/companies-mover/dividend) dispatches now come from separate cron-job.org entries.
   workflow_dispatch:
     inputs:
       mode:

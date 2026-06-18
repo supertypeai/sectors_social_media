@@ -12,12 +12,8 @@ name: Generate and Post Becoming-Insider Crossings
 # insider/earnings workflows.
 
 on:
-  schedule:
-    # Weekday nights 20:30 WIB (13:30 UTC) — staggered 30min after the insider
-    # signal run so the two feeds don't post into #visuals at the same instant.
-    # Mon–Fri only so a leading crossing doesn't post into a closed-market weekend.
-    - cron: '30 13 * * 1-5'
-
+  # Scheduled trigger lives in cron-job.org (calls workflow_dispatch via GitHub REST API).
+  # GH Actions cron suffered 5h+ queue drift; cron-job.org gives sub-minute precision.
   workflow_dispatch:
     inputs:
       channel:

@@ -16,12 +16,8 @@ name: Generate and Post Plain Insider Filings
 # dry_run=true if you just want to preview.
 
 on:
-  schedule:
-    # 07:00 WIB (00:00 UTC), Tue–Sat. Each morning posts the PRIOR trading day:
-    # Tue->Mon, Wed->Tue, ... Sat->Fri. Mon/Sun are skipped (they'd post a weekend
-    # with no filings — the run would no-op anyway via the 0-row guard).
-    - cron: '0 0 * * 2-6'
-
+  # Scheduled trigger lives in cron-job.org (calls workflow_dispatch via GitHub REST API).
+  # GH Actions cron suffered 5h+ queue drift; cron-job.org gives sub-minute precision.
   workflow_dispatch:
     inputs:
       channel:

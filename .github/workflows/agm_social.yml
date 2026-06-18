@@ -1,10 +1,8 @@
 name: Generate and Post AGM
 
 on:
-  schedule:
-    # Every day at 18:00 WIB = 11:00 UTC
-    - cron: '0 11 * * *'
-
+  # Scheduled trigger lives in cron-job.org (calls workflow_dispatch via GitHub REST API).
+  # GH Actions cron suffered 5h+ queue drift; cron-job.org gives sub-minute precision.
   workflow_dispatch:
     inputs:
       channel:

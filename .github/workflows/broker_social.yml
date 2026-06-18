@@ -1,12 +1,9 @@
 name: Generate and Post Broker Summary
 
 on:
-  schedule:
-    # Daily bandar scorecard + trending movers: 18:30 WIB (Mon–Fri) = 11:30 UTC
-    - cron: '30 11 * * 1-5'
-    # Weekly broker recap: Friday 18:30 WIB = Friday 11:30 UTC
-    - cron: '30 11 * * 5'
-
+  # Scheduled trigger lives in cron-job.org (calls workflow_dispatch via GitHub REST API).
+  # GH Actions cron suffered 5h+ queue drift; cron-job.org gives sub-minute precision.
+  # Multi-mode (bandar/trending/weekly) dispatches now come from separate cron-job.org entries.
   workflow_dispatch:
     inputs:
       mode:
