@@ -173,7 +173,7 @@ class VolumeSpikeRenderer(SocialImageRenderer):
 
         # ── layout ────────────────────────────────────────────────────────────
         L, W = 0.04, 0.92
-        HDR = (L, 0.865, W, 0.115)
+        HDR = (L, 0.864, W, 0.126)
         STK = (L, 0.745, W, 0.110)
         CHT = (L, 0.385, W, 0.350)
         FRN = (L, 0.082, W, 0.158)
@@ -197,9 +197,20 @@ class VolumeSpikeRenderer(SocialImageRenderer):
         _card(fig, HDR, ec=TAG_OG, lw=2.0)
         a0 = _overlay(fig, HDR)
         a0.set_xlim(0, 10); a0.set_ylim(0, 3)
-        a0.text(0.35, 1.75, 'VOLUME SPIKE', fontsize=40, fontweight='bold', color=WHITE, va='center')
-        a0.text(0.35, 0.78, "Today's transaction volume is >3x the 30D median average",
-                fontsize=14, color=COOL, va='center')
+        a0.text(0.35, 1.95, 'VOLUME SPIKE', fontsize=40, fontweight='bold', color=WHITE, va='center')
+        sym_clean = sym.replace('.JK', '')
+        # 3-day trend EXCLUDING today (the spike day) vs the 30D median, so the bullet
+        # answers "was volume already building up?" rather than restating today's spike.
+        prior3 = vols[-4:-1]
+        a0.text(0.35, 1.05,
+                f"•  Today's transaction volume of {sym_clean} is {v_rat:.2f}x the 30D median",
+                fontsize=12.5, color=COOL, va='center')
+        if len(prior3) and m_vol:
+            r3 = float(np.mean(prior3)) / m_vol
+            a0.text(0.35, 0.50,
+                    f"•  Over the past 3 days, {sym_clean}'s average volume was "
+                    f"{r3:.1f}x its 30D median",
+                    fontsize=12.5, color=COOL, va='center')
 
         # ── stock info ────────────────────────────────────────────────────────
         _card(fig, STK)
@@ -275,7 +286,7 @@ class VolumeSpikeRenderer(SocialImageRenderer):
         a2.set_yticks(sorted(set(_auto + [med_v])))
         _tol = max(max_v * 1e-4, 1e-9)
         a2.yaxis.set_major_formatter(mticker.FuncFormatter(
-            lambda x, _: 'Median' if abs(x - med_v) < _tol else f'{x:.0f}{_vunit}'
+            lambda x, _: '30D Median' if abs(x - med_v) < _tol else f'{x:.0f}{_vunit}'
         ))
         a2.tick_params(axis='y', colors=COOL, labelsize=7)
         a2.tick_params(axis='x', length=0)
