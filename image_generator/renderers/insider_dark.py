@@ -2982,7 +2982,8 @@ class InsiderEarningsRendererMixin:
 
         head_start = 184
         line_gap = 10
-        header_panel(draw, img, f"{base} · latest quarter · {sector}")
+        quarter_lbl = str(spike.get("latest_quarter") or "").replace("-", " ")  # "Q1-2026" -> "Q1 2026"
+        header_panel(draw, img, f"{base} · {quarter_lbl or 'latest quarter'} · {sector}")
         draw.text((HX, head_start), ellipsize_to_width(draw, name, hf, max_w),
                   font=hf, fill=HEAD_COLOR)
         ly = head_start + (hf.size + line_gap)

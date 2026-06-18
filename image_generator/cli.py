@@ -142,7 +142,12 @@ def _becoming_caption(e):
 def _earnings_caption(s):
     sym = str(s.get("base_symbol") or s.get("symbol") or "").upper()
     word = "jumped" if s.get("direction") == "spike" else "fell"
-    return f":zap: *{sym} — quarterly profit {word}*\n\n{_TAGS} #Earnings #SectorsApp"
+    quarter = str(s.get("latest_quarter") or "").replace("-", " ")  # "Q1-2026" -> "Q1 2026"
+    g = s.get("earnings_growth")
+    # State the comparison explicitly (YoY) so the headline can't be misread as QoQ.
+    pct = f" {abs(g) * 100:.0f}% YoY" if g is not None else ""
+    lead = f"{quarter} net profit {word}{pct}" if quarter else f"quarterly net profit {word}{pct}"
+    return f":zap: *{sym} — {lead}*\n\n{_TAGS} #Earnings #SectorsApp"
 
 
 def load_input(args, kind):
