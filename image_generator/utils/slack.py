@@ -1,14 +1,15 @@
 from slack_sdk import WebClient
 from pathlib import Path 
 
+import requests as http_requests
 import os 
 
 
-def upload_posts_to_slack(posts: list, slack_channel: str | None = None):
-    """Upload each post to Slack. Returns the list of items that ACTUALLY
-    uploaded, so callers can persist state only for posts that truly went out
-    (a swallowed Slack error must not be mistaken for success). When Slack is
-    not configured nothing is uploaded, so an empty list is returned.
+def upload_posts_to_slack(posts: list, slack_channel: str | None = None) -> list:
+    """ 
+    Upload posts to Slack as a single batched message when multiple images
+    are provided. Returns the list of paths that were actually uploaded.
+    When Slack is not configured, nothing is uploaded and an empty list is returned.
     """
     slack_token = os.getenv("SLACK_BOT_TOKEN")
 
@@ -20,6 +21,9 @@ def upload_posts_to_slack(posts: list, slack_channel: str | None = None):
             path = item[0] if isinstance(item, tuple) else item
             print(Path(path).resolve())
 
+        return []
+
+    if not posts:
         return []
 
     client = WebClient(token=slack_token)
@@ -35,8 +39,36 @@ def upload_posts_to_slack(posts: list, slack_channel: str | None = None):
             print(f"Could not open DM with {slack_channel}: {error}")
             return []
 
-    uploaded = []
-    for item in posts:
+    if len(posts) == 1:
+        item = posts[0]
+
+        if isinstance(item, tuple):
+            path, caption = item
+
+        else:
+            path = item
+            caption = f"New image generated: {Path(item).name}\n\n#IDX #StockMarket #Indonesia #SectorsApp"
+        
+        resolved = Path(path).resolve()
+
+        try:
+            print(f"Uploading {resolved.name} to Slack")
+            client.files_upload_v2(
+                channel=target_channel,
+                file=str(resolved),
+                initial_comment=caption,
+            )
+            return [path]
+        
+        except Exception as error:
+            print(f"Slack error: {error}")
+            return []
+
+    # Multiple files: batch into one message
+    file_refs = []
+    initial_comment = None
+
+    for index, item in enumerate(posts):
         if isinstance(item, tuple):
             path, caption = item
 
@@ -45,21 +77,34 @@ def upload_posts_to_slack(posts: list, slack_channel: str | None = None):
             caption = f"New image generated: {Path(item).name}\n\n#IDX #StockMarket #Indonesia #SectorsApp"
 
         resolved = Path(path).resolve()
-        print(resolved)
+
+        if index == 0:
+            initial_comment = caption
 
         try:
-            print(f"Uploading {resolved.name} to Slack...")
-            client.files_upload_v2(
-                channel=target_channel,
-                file=str(resolved),
-                initial_comment=caption,
+            url_response = client.files_getUploadURLExternal(
+                filename=resolved.name,
+                length=resolved.stat().st_size,
             )
-            # Return the path (not the whole item) so callers can match uploaded
-            # slides whether they passed bare paths or (path, caption) tuples.
-            uploaded.append(path)
 
+            with open(resolved, "rb") as file_data:
+                http_requests.post(url_response["upload_url"], data=file_data).raise_for_status()
+            
+            file_refs.append({"id": url_response["file_id"], "title": resolved.stem})
+        
         except Exception as error:
-            print(f"Slack error: {error}")
+            print(f"Failed to stage {resolved.name}: {error}")
+            return []
 
-    return uploaded
-
+    try:
+        print(f"Uploading batch of {len(file_refs)} files to Slack")
+        client.files_completeUploadExternal(
+            files=file_refs,
+            channel_id=target_channel,
+            initial_comment=initial_comment,
+        )
+        return [item[0] if isinstance(item, tuple) else item for item in posts]
+    
+    except Exception as error:
+        print(f"Slack error: {error}")
+        return []

@@ -25,7 +25,6 @@ from .data import (
     fetch_volume_spike_data,
     fetch_anomaly_data,
 )
-from .utils.slack import upload_posts_to_slack 
 from .utils.io_helper import load_dividend_state, save_dividend_state
 
 import typer
