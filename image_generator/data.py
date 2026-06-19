@@ -890,3 +890,78 @@ def fetch_idx_daily_data(symbol: str, from_date: str) -> list[dict]:
         for record in idx_daily_data.to_dict(orient="records")
         if record.get("close") is not None
     ]
+
+
+def fetch_foreign_flow_data(window_days: int = 7, top_n: int = 8, mcap_rank_max: int = 200):
+    """Market-wide foreign net flow leaderboard over the last ~week of trading.
+
+    Aggregates per-symbol foreign net value (IDR) = Σ (foreign_buy_volume −
+    foreign_sell_volume) × close across the window, then ranks the strongest
+    net-bought and net-sold names. Multi-ticker — the whole post compares stocks
+    against each other, so unlike the per-stock anomaly post there is no single
+    subject. Restricted to liquid top-mcap names so the board isn't dominated by
+    thin small-caps where a single block trade swamps the ratio.
+
+    Returns {} when there isn't enough data, else:
+      {"net_buy": [rows], "net_sell": [rows], "window": (start, end), "trading_days": int}
+    each row: symbol, base_symbol, company_name, sub_sector, net_value, gross_value.
+    """
+    df_compro = fetch_supabase_table(
+        "idx_company_report",
+        columns="symbol,company_name,market_cap_rank,sub_sector",
+        query_modifier=lambda q: q.lte("market_cap_rank", mcap_rank_max),
+    )
+    if df_compro.empty:
+        return {}
+
+    since = (pd.Timestamp.now().normalize() - pd.Timedelta(days=window_days)).strftime("%Y-%m-%d")
+    df_daily = fetch_supabase_table(
+        "idx_daily_data",
+        columns="symbol,date,close,foreign_buy_volume,foreign_sell_volume",
+        since_column="date",
+        since_value=since,
+        query_modifier=lambda q: q.in_("symbol", df_compro["symbol"].tolist()),
+    )
+    if df_daily.empty:
+        return {}
+
+    for col in ("close", "foreign_buy_volume", "foreign_sell_volume"):
+        df_daily[col] = pd.to_numeric(df_daily[col], errors="coerce")
+    df_daily = df_daily.dropna(subset=["close", "foreign_buy_volume", "foreign_sell_volume"])
+    if df_daily.empty:
+        return {}
+
+    # Per-row foreign flow in IDR (volume is in shares, so × close = rupiah).
+    df_daily["net_value"] = (
+        (df_daily["foreign_buy_volume"] - df_daily["foreign_sell_volume"]) * df_daily["close"]
+    )
+    df_daily["gross_value"] = (
+        (df_daily["foreign_buy_volume"] + df_daily["foreign_sell_volume"]) * df_daily["close"]
+    )
+
+    agg = (
+        df_daily.groupby("symbol")
+        .agg(net_value=("net_value", "sum"), gross_value=("gross_value", "sum"))
+        .reset_index()
+        .merge(df_compro[["symbol", "company_name", "sub_sector"]], on="symbol", how="left")
+    )
+    agg["base_symbol"] = agg["symbol"].str.replace(".JK", "", regex=False)
+
+    trading_days = int(df_daily["date"].nunique())
+    window = (str(df_daily["date"].min())[:10], str(df_daily["date"].max())[:10])
+
+    def _rows(frame):
+        return frame.to_dict(orient="records")
+
+    net_buy = agg[agg["net_value"] > 0].sort_values("net_value", ascending=False).head(top_n)
+    net_sell = agg[agg["net_value"] < 0].sort_values("net_value", ascending=True).head(top_n)
+
+    if net_buy.empty and net_sell.empty:
+        return {}
+
+    return {
+        "net_buy": _rows(net_buy),
+        "net_sell": _rows(net_sell),
+        "window": window,
+        "trading_days": trading_days,
+    }

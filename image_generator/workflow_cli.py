@@ -8,6 +8,7 @@ from .renderers.agm import AGMRenderer
 from .renderers.dividend import DividendRenderer
 from .renderers.volume_spike import VolumeSpikeRenderer
 from .renderers.anomalies_changes import AnomalyChangesRenderer
+from .renderers.foreign_flow import ForeignFlowRenderer
 from .utils.slack import upload_posts_to_slack
 from .classification import (
     prepare_data_by_mcap, 
@@ -24,6 +25,7 @@ from .data import (
     fetch_upcoming_dividends,
     fetch_volume_spike_data,
     fetch_anomaly_data,
+    fetch_foreign_flow_data,
 )
 from .utils.slack import upload_posts_to_slack 
 from .utils.io_helper import load_dividend_state, save_dividend_state
@@ -274,6 +276,29 @@ def anomaly_changes(
         ]
         upload_posts_to_slack(posts, slack_channel=slack_channel)
 
+
+@app.command("foreign-flow")
+def foreign_flow(
+    output: Path = typer.Option(Path("output"), "--output", "-o"),
+    slack_channel: str | None = typer.Option(None, "--slack-channel"),
+):
+    renderer = ForeignFlowRenderer(output_dir=output)
+
+    data = fetch_foreign_flow_data()
+    if not data or (not data.get("net_buy") and not data.get("net_sell")):
+        typer.echo("Skipping foreign-flow: no foreign flow data")
+        raise typer.Exit(code=0)
+
+    paths = renderer.render(data=data)
+    for path in paths:
+        typer.echo(path.resolve())
+
+    if slack_channel:
+        posts = [
+            (path, "Where foreign money moved this week\n\n#IDX #StockMarket #Indonesia #ForeignFlow #SectorsApp")
+            for path in paths
+        ]
+        upload_posts_to_slack(posts, slack_channel=slack_channel)
 
 if __name__ == "__main__":
     app()
