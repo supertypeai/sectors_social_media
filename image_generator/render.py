@@ -87,8 +87,29 @@ def font(name="Inter-Bold.ttf", size=48):
 def format_price(value: float) -> str:
     if value >= 1000:
         return f"{value:,.0f}".replace(",", ".")
-    
+
     return str(int(value))
+
+
+def format_date_range(window):
+    """Human date range from a (start, end) pair of 'YYYY-MM-DD' strings.
+
+    e.g. ('2026-06-12','2026-06-18') -> '12-18 Jun 2026'; collapses the shared
+    month/year so the label stays short, expands them when they differ.
+    """
+    from datetime import datetime
+    if not window or len(window) < 2:
+        return ""
+    try:
+        s = datetime.strptime(str(window[0])[:10], "%Y-%m-%d")
+        e = datetime.strptime(str(window[1])[:10], "%Y-%m-%d")
+    except (TypeError, ValueError):
+        return ""
+    if (s.year, s.month) == (e.year, e.month):
+        return f"{s.day}-{e.day} {e.strftime('%b %Y')}"
+    if s.year == e.year:
+        return f"{s.day} {s.strftime('%b')} - {e.day} {e.strftime('%b %Y')}"
+    return f"{s.strftime('%d %b %Y')} - {e.strftime('%d %b %Y')}"
 
 
 def fit_font(draw, text, max_width, start_size, min_size=18, bold=True):

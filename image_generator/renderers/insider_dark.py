@@ -250,6 +250,18 @@ class InsiderEarningsRendererMixin:
             cy += row_h
         return y + card_h
 
+    def _draw_read_more(self, img, draw, W, y, sym_slug, accent):
+        """Centered 'Read more on: sectors.app/idx/{sym}' CTA line."""
+        label_fnt = font("Inter-SemiBold.ttf", 22)
+        link_fnt = font("Inter-Bold.ttf", 26)
+        label = "Read more on: "
+        link = f"sectors.app/idx/{sym_slug}"
+        label_w = int(draw.textlength(label, font=label_fnt))
+        link_w = int(draw.textlength(link, font=link_fnt))
+        cta_x = (W - label_w - link_w) // 2
+        draw.text((cta_x, y + 2), label, font=label_fnt, fill="#9090a8")
+        draw.text((cta_x + label_w, y), link, font=link_fnt, fill=accent)
+
     def _cluster_convergence_chart(self, close_by_date, points, roster, palette, figsize=(11, 3.3),
                                    avg_buy=None, dots_color=None, dots_label=None, show_legend=False,
                                    ylabel=None, face="#ffffff", label_color="#666",
@@ -2014,6 +2026,7 @@ class InsiderEarningsRendererMixin:
             self._dark_stat_card(img, draw, M + 2 * (sw + gap), sy2, sw, "MARKET VS FILING", f"{vs_avg:+.0f}%", vs_sub, vs_color, value_color=vs_color)
         else:
             self._dark_stat_card(img, draw, M + 2 * (sw + gap), sy2, sw, "MARKET VS FILING", "-", "", "#555566")
+        self._draw_read_more(img, draw, W, sy2 + 164 + 38, base.lower(), accent)
         self._dark_page_dots(draw, W, 1180, 1, 2, accent)
         paths.append(self._save(img, f"{prefix}_2.png"))
 
@@ -2501,6 +2514,8 @@ class InsiderEarningsRendererMixin:
         self._dark_stat_card(img, draw, M + sw + gap, sy2, sw, "PERIOD", filing_span, "filing dates", "#F29942")
         self._dark_stat_card(img, draw, M + 2 * (sw + gap), sy2, sw, "TOTAL",
                              f"IDR {compact(total_value)}", "value traded", colors["market"])
+        if top_stock:
+            self._draw_read_more(img, draw, W, sy2 + 164 + 38, top_stock["base_symbol"].lower(), accent)
         self._dark_page_dots(draw, W, 1180, 1, 2, accent)
         paths.append(self._save(img, f"{prefix}_2.png"))
 
@@ -2831,7 +2846,8 @@ class InsiderEarningsRendererMixin:
 
         modules = [("WHY 5%?", "Anyone owning 5%+ must be publicly reported", "#F29942")]
         sig_y = sy2 + 164 + 22
-        self._dark_signal_card(draw, img, M, sig_y, W - 2 * M, modules, accent, header="GOOD TO KNOW")
+        card_bottom = self._dark_signal_card(draw, img, M, sig_y, W - 2 * M, modules, accent, header="GOOD TO KNOW")
+        self._draw_read_more(img, draw, W, card_bottom + 38, base.lower(), accent)
         self._dark_page_dots(draw, W, 1180, 1, 2, accent)
         paths.append(self._save(img, f"{prefix}_2.png"))
 
@@ -3070,9 +3086,11 @@ class InsiderEarningsRendererMixin:
             else:
                 quality = "Profit up mostly on margins or one-offs"
             module_title = "IS IT REAL?"
+        sym_slug = base.replace(".JK", "").lower()
         modules = [(module_title, quality, "#F29942")]
         sig_y = sy2 + 164 + 22
-        self._dark_signal_card(draw, img, M, sig_y, W - 2 * M, modules, accent, header="GOOD TO KNOW")
+        card_bottom = self._dark_signal_card(draw, img, M, sig_y, W - 2 * M, modules, accent, header="GOOD TO KNOW")
+        self._draw_read_more(img, draw, W, card_bottom + 38, sym_slug, accent)
         self._dark_page_dots(draw, W, 1180, 1, 2, accent)
         paths.append(self._save(img, f"{prefix}_2.png"))
 

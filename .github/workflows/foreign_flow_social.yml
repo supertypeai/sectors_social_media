@@ -1,0 +1,83 @@
+name: Generate and Post Foreign Flow Leaderboard
+
+# Weekly Saturday post: where did foreign money go across the IDX this week?
+# Two slides — top net-buy stocks and top net-sell stocks for the trading week
+# (Mon–Fri). Data window is the past 7 calendar days which captures exactly
+# one trading week.
+#
+# Runs every Saturday at 08:00 WIB (01:00 UTC) so the full week Mon–Fri is
+# captured before the post goes out.
+
+on:
+  schedule:
+    - cron: '0 1 * * 6'   # Saturday 08:00 WIB (01:00 UTC)
+
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Slack channel/DM ID (paste U... for a DM to yourself, default = #visuals)'
+        required: false
+        default: 'C04RC79U5NK'
+      dry_run:
+        description: 'Skip Slack upload (generate PNGs only, downloadable as artifact)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+jobs:
+  generate_and_post:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libharfbuzz-dev libfribidi-dev
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Resolve channel / dry-run
+        id: resolve
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "channel=${{ github.event.inputs.channel || 'C04RC79U5NK' }}" >> "$GITHUB_OUTPUT"
+            if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+              echo "dry_run=--dry-run" >> "$GITHUB_OUTPUT"
+            else
+              echo "dry_run=" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "channel=C04RC79U5NK" >> "$GITHUB_OUTPUT"
+            echo "dry_run=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run Foreign Flow Generator
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        run: |
+          python -m image_generator.workflow_cli foreign-flow \
+            --slack-channel "${{ steps.resolve.outputs.channel }}"
+
+      - name: Upload generated PNGs as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: foreign-flow-cards
+          path: output/
+          if-no-files-found: warn
+          retention-days: 7
