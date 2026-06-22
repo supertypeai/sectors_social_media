@@ -1133,11 +1133,6 @@ class SocialImageRenderer(InsiderEarningsRendererMixin):
                 draw.text((cursor_x + 11, y + 6), primary_ticker, font=ticker_fnt, fill=COLORS["ink"])
                 cursor_x += ticker_pill_w + 10
 
-            rel = relative_time(news.get("created_at"))
-            if rel:
-                ts_fnt = font("Inter-Regular.ttf", 20)
-                draw.text((cursor_x, y + 7), rel, font=ts_fnt, fill=COLORS["faint"])
-
             headline_bottom = y + chip_h + 8
             headline = clean_headline(news.get("title"))
             if headline:
