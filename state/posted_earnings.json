@@ -1,7 +1,7 @@
 {
   "earnings": {
     "earnings:ARCI:Q1-2026:spike": {
-      "earnings_growth": 1.9666080843585237,
+      "earnings_growth": 1.9666080843585236,
       "latest_quarter": "Q1-2026",
       "posted_at": "2026-06-23"
     },
@@ -24,6 +24,11 @@
       "earnings_growth": 2.4208795251575403,
       "latest_quarter": "Q1-2026",
       "posted_at": "2026-06-17"
+    },
+    "earnings:JPFA:Q1-2026:spike": {
+      "earnings_growth": 1.6695541116697554,
+      "latest_quarter": "Q1-2026",
+      "posted_at": "2026-06-23"
     },
     "earnings:MEDC:Q1-2026:spike": {
       "earnings_growth": 2.916015034212479,
