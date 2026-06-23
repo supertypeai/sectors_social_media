@@ -1,5 +1,10 @@
 {
   "earnings": {
+    "earnings:ARCI:Q1-2026:spike": {
+      "earnings_growth": 1.9666080843585237,
+      "latest_quarter": "Q1-2026",
+      "posted_at": "2026-06-23"
+    },
     "earnings:BINA:Q1-2026:spike": {
       "earnings_growth": 2.687269436904016,
       "latest_quarter": "Q1-2026",
