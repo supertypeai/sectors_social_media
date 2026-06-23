@@ -45,6 +45,7 @@ def quarterly(
     df_workflow = fetch_workflow_data(
         table_name="idx_workflow_data",
         columns="symbol, company_name, quarterly_low, quarterly_high",
+        required_columns=["quarterly_low", "quarterly_high"],
     )
 
     df_company_report = fetch_company_report()
@@ -53,9 +54,9 @@ def quarterly(
     payload_workflow = prepare_data_by_mcap(df_workflow, df_company_report)
 
     payload = select_quarterly_data(payload_ihsg_weekly, payload_workflow)
-
-    if not payload or len(payload) < 16:
-        typer.echo("Skipping quarterly: not enough data")
+   
+    if not payload:
+        typer.echo(f"Skipping quarterly: no data found to trigger render")
         raise typer.Exit(code=0)
 
     path = renderer.render(data=payload)
