@@ -32,6 +32,17 @@ from .data import (
     fetch_company_report_ownership,
 )
 from .utils.io_helper import load_dividend_state, save_dividend_state
+from .triggers import (
+    load_ownership_state,
+    save_ownership_state,
+    select_ownership_fires,
+    record_ownership,
+    load_ownership_board_state,
+    save_ownership_board_state,
+    board_period_key,
+    board_already_posted,
+    record_board,
+)
 
 import typer
 
@@ -307,30 +318,50 @@ def foreign_flow(
 def ownership(
     output: Path = typer.Option(Path("output"), "--output", "-o"),
     slack_channel: str | None = typer.Option(None, "--slack-channel"),
-    limit: int = typer.Option(3, "--limit", help="Max number of ownership carousels to render."),
+    limit: int = typer.Option(1, "--limit", help="Max ownership carousels to post this run."),
 ):
     renderer = OwnershipRenderer(output_dir=output)
 
     df = fetch_company_report_ownership()
-    posts = select_ownership_posts(df, limit=limit)
+    posts = select_ownership_posts(df)   # sorted by market-cap rank (recognizable first)
     if not posts:
         typer.echo("Skipping ownership: no single-entity-holding-70 names")
         raise typer.Exit(code=0)
 
-    typer.echo(f"Rendering {len(posts)} ownership carousel(s)...")
+    state = load_ownership_state()
+    fires = select_ownership_fires(posts, state)[:limit]
+    if not fires:
+        typer.echo("Skipping ownership: nothing new to post (all posted, none changed)")
+        raise typer.Exit(code=0)
+
+    typer.echo(f"Rendering {len(fires)} ownership carousel(s)...")
     all_paths = []
-    for post in posts:
+    slide_owner = {}
+    for post in fires:
         slides = renderer.render(post)
-        for path in slides:
-            typer.echo(path.resolve())
         base = str(post["symbol"]).upper().split(".")[0]
         caption = (
             f"Who really owns {base}?\n\n#IDX #StockMarket #Indonesia #Ownership #SectorsApp"
         )
-        all_paths.extend((path, caption) for path in slides)
+        for path in slides:
+            typer.echo(path.resolve())
+            all_paths.append((path, caption))
+            slide_owner[path] = post
 
     if slack_channel:
-        upload_posts_to_slack(all_paths, slack_channel=slack_channel)
+        uploaded = upload_posts_to_slack(all_paths, slack_channel=slack_channel)
+
+        # Only burn state for names whose slides actually went out.
+        posted, seen = [], set()
+        for path, _ in uploaded:
+            post = slide_owner.get(path)
+            if post is not None and id(post) not in seen:
+                seen.add(id(post))
+                posted.append(post)
+        for post in posted:
+            record_ownership(state, post, date.today())
+        if posted:
+            save_ownership_state(state)
 
 
 @app.command("ownership-board")
@@ -340,6 +371,12 @@ def ownership_board(
     top_n: int = typer.Option(10, "--top-n", help="How many companies on the leaderboard."),
 ):
     renderer = OwnershipBoardRenderer(output_dir=output)
+
+    state = load_ownership_board_state()
+    key = board_period_key(date.today())
+    if board_already_posted(state, key):
+        typer.echo(f"Skipping ownership-board: already posted for {key}")
+        raise typer.Exit(code=0)
 
     df = fetch_company_report_ownership()
     posts = select_ownership_posts(df)
@@ -356,7 +393,12 @@ def ownership_board(
             "Indonesian companies almost entirely owned by one shareholder\n\n"
             "#IDX #StockMarket #Indonesia #Ownership #SectorsApp"
         )
-        upload_posts_to_slack([(p, caption) for p in paths], slack_channel=slack_channel)
+        uploaded = upload_posts_to_slack([(p, caption) for p in paths], slack_channel=slack_channel)
+        if uploaded:
+            board = sorted(posts[:top_n], key=lambda p: p["controller"]["pct"] or 0, reverse=True)
+            symbols = [str(p["symbol"]).upper().split(".")[0] for p in board]
+            record_board(state, key, symbols, date.today())
+            save_ownership_board_state(state)
 
 
 if __name__ == "__main__":
