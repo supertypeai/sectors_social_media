@@ -9,11 +9,14 @@ from .renderers.dividend import DividendRenderer
 from .renderers.volume_spike import VolumeSpikeRenderer
 from .renderers.anomalies_changes import AnomalyChangesRenderer
 from .renderers.foreign_flow import ForeignFlowRenderer
+from .renderers.ownership import OwnershipRenderer
+from .renderers.ownership_board import OwnershipBoardRenderer
 from .utils.slack import upload_posts_to_slack
 from .classification import (
-    prepare_data_by_mcap, 
-    select_quarterly_data, 
-    prepare_data_upcoming_dividend
+    prepare_data_by_mcap,
+    select_quarterly_data,
+    prepare_data_upcoming_dividend,
+    select_ownership_posts,
 )
 from .data import (
     fetch_company_report,
@@ -26,6 +29,7 @@ from .data import (
     fetch_volume_spike_data,
     fetch_anomaly_data,
     fetch_foreign_flow_data,
+    fetch_company_report_ownership,
 )
 from .utils.io_helper import load_dividend_state, save_dividend_state
 
@@ -298,6 +302,62 @@ def foreign_flow(
             for path in paths
         ]
         upload_posts_to_slack(posts, slack_channel=slack_channel)
+
+@app.command("ownership")
+def ownership(
+    output: Path = typer.Option(Path("output"), "--output", "-o"),
+    slack_channel: str | None = typer.Option(None, "--slack-channel"),
+    limit: int = typer.Option(3, "--limit", help="Max number of ownership carousels to render."),
+):
+    renderer = OwnershipRenderer(output_dir=output)
+
+    df = fetch_company_report_ownership()
+    posts = select_ownership_posts(df, limit=limit)
+    if not posts:
+        typer.echo("Skipping ownership: no single-entity-holding-70 names")
+        raise typer.Exit(code=0)
+
+    typer.echo(f"Rendering {len(posts)} ownership carousel(s)...")
+    all_paths = []
+    for post in posts:
+        slides = renderer.render(post)
+        for path in slides:
+            typer.echo(path.resolve())
+        base = str(post["symbol"]).upper().split(".")[0]
+        caption = (
+            f"Who really owns {base}?\n\n#IDX #StockMarket #Indonesia #Ownership #SectorsApp"
+        )
+        all_paths.extend((path, caption) for path in slides)
+
+    if slack_channel:
+        upload_posts_to_slack(all_paths, slack_channel=slack_channel)
+
+
+@app.command("ownership-board")
+def ownership_board(
+    output: Path = typer.Option(Path("output"), "--output", "-o"),
+    slack_channel: str | None = typer.Option(None, "--slack-channel"),
+    top_n: int = typer.Option(10, "--top-n", help="How many companies on the leaderboard."),
+):
+    renderer = OwnershipBoardRenderer(output_dir=output)
+
+    df = fetch_company_report_ownership()
+    posts = select_ownership_posts(df)
+    if not posts:
+        typer.echo("Skipping ownership-board: no single-entity-holding-70 names")
+        raise typer.Exit(code=0)
+
+    paths = renderer.render(posts, top_n=top_n)
+    for path in paths:
+        typer.echo(path.resolve())
+
+    if slack_channel:
+        caption = (
+            "Indonesian companies almost entirely owned by one shareholder\n\n"
+            "#IDX #StockMarket #Indonesia #Ownership #SectorsApp"
+        )
+        upload_posts_to_slack([(p, caption) for p in paths], slack_channel=slack_channel)
+
 
 if __name__ == "__main__":
     app()
