@@ -72,6 +72,12 @@
       "posted_at": "2026-06-24",
       "progress_count": 6
     },
+    "cluster:BIKE:sell": {
+      "completed_date": "2026-06-26",
+      "completing_filing_id": 3930,
+      "posted_at": "2026-06-26",
+      "progress_count": 3
+    },
     "cluster:CYBR:sell": {
       "completed_date": "2026-06-16",
       "completing_filing_id": 3853,
