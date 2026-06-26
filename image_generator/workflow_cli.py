@@ -10,6 +10,7 @@ from .renderers.volume_spike import VolumeSpikeRenderer
 from .renderers.anomalies_changes import AnomalyChangesRenderer
 from .renderers.foreign_flow import ForeignFlowRenderer
 from .renderers.winners_losers import WinnersLosersRenderer
+from .renderers.sector_heatmap import SectorHeatmapRenderer
 from .utils.slack import upload_posts_to_slack
 from .classification import (
     prepare_data_by_mcap, 
@@ -28,6 +29,7 @@ from .data import (
     fetch_anomaly_data,
     fetch_foreign_flow_data,
     fetch_weekly_movers_data,
+    fetch_weekly_sector_data,
 )
 from .utils.io_helper import load_dividend_state, save_dividend_state
 
@@ -324,6 +326,33 @@ def weekly_movers(
     if slack_channel:
         caption = (
             "Week's Winners & Losers — top 100 by market cap\n\n"
+            "#IDX #StockMarket #Indonesia #SectorsApp"
+        )
+        upload_posts_to_slack([(path, caption)], slack_channel=slack_channel)
+
+
+@app.command("sector-heatmap")
+def sector_heatmap(
+    output: Path = typer.Option(Path("output"), "--output", "-o"),
+    slack_channel: str | None = typer.Option(None, "--slack-channel"),
+):
+    renderer = SectorHeatmapRenderer(output_dir=output)
+
+    data = fetch_weekly_sector_data()
+    if not data or not data.get("sectors"):
+        typer.echo("Skipping sector-heatmap: no data")
+        raise typer.Exit(code=0)
+
+    typer.echo(
+        f"Rendering sector heat map ({len(data['sectors'])} sectors, "
+        f"{data.get('trading_days')} trading days)..."
+    )
+    path = renderer.render(data=data)
+    typer.echo(path.resolve())
+
+    if slack_channel:
+        caption = (
+            "IDX Sector Heat Map — weekly performance by sector\n\n"
             "#IDX #StockMarket #Indonesia #SectorsApp"
         )
         upload_posts_to_slack([(path, caption)], slack_channel=slack_channel)

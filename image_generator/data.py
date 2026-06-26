@@ -1059,3 +1059,121 @@ def fetch_weekly_movers_data(top_n: int = 10, mcap_rank_max: int = 100):
         "trading_days": trading_days,
     }
 
+
+def fetch_weekly_sector_data(mcap_rank_max: int = 300):
+    """11-sector heat map of weekly performance for the current Mon-Fri week.
+
+    Same window logic as `fetch_weekly_movers_data`. For each of the 11 IDX
+    sectors (IDX-IC taxonomy), computes mcap-weighted weekly return across
+    constituents in the top-mcap universe (top 300 by default â€” wide enough
+    that small sectors like Healthcare / Transportation get meaningful sample
+    size), plus the per-sector bellwether (largest stock by market cap) and
+    its own weekly return.
+
+    Returns {} when there isn't enough data, else:
+      {"sectors": [rows], "window": (start, end), "trading_days": int}
+    each row: sector, weighted_return, n_stocks, top_symbol, top_base_symbol,
+              top_company_name, top_return.
+    """
+    df_compro = fetch_supabase_table(
+        "idx_company_report",
+        columns="symbol,company_name,sector,market_cap,market_cap_rank",
+        query_modifier=lambda q: q.lte("market_cap_rank", mcap_rank_max),
+    )
+    if df_compro.empty:
+        return {}
+
+    df_compro = df_compro.dropna(subset=["sector"])
+    df_compro["market_cap"] = pd.to_numeric(df_compro["market_cap"], errors="coerce")
+    df_compro = df_compro.dropna(subset=["market_cap"])
+    if df_compro.empty:
+        return {}
+
+    today = pd.Timestamp.now().normalize()
+    if today.weekday() >= 5:
+        last_friday = today - pd.Timedelta(days=today.weekday() - 4)
+        week_monday = last_friday - pd.Timedelta(days=4)
+        week_friday = last_friday
+    else:
+        week_monday = today - pd.Timedelta(days=today.weekday())
+        week_friday = week_monday + pd.Timedelta(days=4)
+    since = week_monday.strftime("%Y-%m-%d")
+    until = week_friday.strftime("%Y-%m-%d")
+
+    df_daily = fetch_supabase_table(
+        "idx_daily_data",
+        columns="symbol,date,close",
+        query_modifier=lambda q: q.in_("symbol", df_compro["symbol"].tolist())
+                                  .gte("date", since)
+                                  .lte("date", until),
+    )
+    if df_daily.empty:
+        return {}
+
+    df_daily["close"] = pd.to_numeric(df_daily["close"], errors="coerce")
+    df_daily = df_daily.dropna(subset=["close"])
+    df_daily = df_daily[df_daily["close"] > 0]
+    if df_daily.empty:
+        return {}
+
+    df_daily["date"] = pd.to_datetime(df_daily["date"])
+    df_daily = df_daily.sort_values(["symbol", "date"])
+
+    grp = df_daily.groupby("symbol")
+    perf = pd.DataFrame({
+        "first_close": grp["close"].first(),
+        "last_close": grp["close"].last(),
+        "n_points": grp["close"].count(),
+    }).reset_index()
+    perf = perf[perf["n_points"] >= 2]
+    if perf.empty:
+        return {}
+
+    perf["weekly_return"] = (perf["last_close"] - perf["first_close"]) / perf["first_close"]
+    perf = perf.merge(
+        df_compro[["symbol", "company_name", "sector", "market_cap"]],
+        on="symbol",
+        how="left",
+    )
+    perf = perf.dropna(subset=["sector"])
+    if perf.empty:
+        return {}
+
+    # Sector-level: market-cap weighted average return.
+    perf["mcap_x_ret"] = perf["market_cap"] * perf["weekly_return"]
+    sector_agg = (
+        perf.groupby("sector", as_index=False)
+            .agg(
+                weighted_sum=("mcap_x_ret", "sum"),
+                total_mcap=("market_cap", "sum"),
+                n_stocks=("symbol", "count"),
+            )
+    )
+    sector_agg["weighted_return"] = sector_agg["weighted_sum"] / sector_agg["total_mcap"]
+
+    # Per-sector bellwether (largest stock by market cap) and its own weekly
+    # return. The reader recognizes BBCA, TLKM, BREN, etc., so the row reads
+    # as "sector did X this week, and here's how the giant in it moved."
+    sector_top = (
+        perf.sort_values("market_cap", ascending=False)
+            .groupby("sector", as_index=False)
+            .first()[["sector", "symbol", "company_name", "weekly_return"]]
+            .rename(columns={
+                "symbol": "top_symbol",
+                "company_name": "top_company_name",
+                "weekly_return": "top_return",
+            })
+    )
+    sector_top["top_base_symbol"] = sector_top["top_symbol"].str.replace(".JK", "", regex=False)
+
+    result = sector_agg.merge(sector_top, on="sector", how="left")
+    result = result.sort_values("weighted_return", ascending=False).reset_index(drop=True)
+
+    trading_days = int(df_daily["date"].nunique())
+    window = (str(df_daily["date"].min())[:10], str(df_daily["date"].max())[:10])
+
+    return {
+        "sectors": result.to_dict(orient="records"),
+        "window": window,
+        "trading_days": trading_days,
+    }
