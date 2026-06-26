@@ -12,6 +12,7 @@ from .renderers.foreign_flow import ForeignFlowRenderer
 from .renderers.winners_losers import WinnersLosersRenderer
 from .renderers.sector_heatmap import SectorHeatmapRenderer
 from .renderers.lq45_ytd import LQ45YTDRenderer
+from .renderers.insider_roundup import InsiderRoundupRenderer
 from .utils.slack import upload_posts_to_slack
 from .classification import (
     prepare_data_by_mcap, 
@@ -32,6 +33,7 @@ from .data import (
     fetch_weekly_movers_data,
     fetch_weekly_sector_data,
     fetch_lq45_ytd_data,
+    fetch_weekly_insider_aggregates,
 )
 from .utils.io_helper import load_dividend_state, save_dividend_state
 
@@ -382,6 +384,33 @@ def lq45_ytd(
         caption = (
             f"{verb} YTD performers in LQ45 — based on year-to-date close prices\n\n"
             "#IDX #LQ45 #StockMarket #Indonesia #SectorsApp"
+        )
+        upload_posts_to_slack([(path, caption)], slack_channel=slack_channel)
+
+
+@app.command("insider-roundup")
+def insider_roundup(
+    output: Path = typer.Option(Path("output"), "--output", "-o"),
+    slack_channel: str | None = typer.Option(None, "--slack-channel"),
+):
+    renderer = InsiderRoundupRenderer(output_dir=output)
+
+    data = fetch_weekly_insider_aggregates()
+    if not data or (not data.get("buys") and not data.get("sells")):
+        typer.echo("Skipping insider-roundup: no data")
+        raise typer.Exit(code=0)
+
+    typer.echo(
+        f"Rendering insider roundup ({len(data.get('buys', []))} buys, "
+        f"{len(data.get('sells', []))} sells, {data.get('n_filings')} filings)..."
+    )
+    path = renderer.render(data=data)
+    typer.echo(path.resolve())
+
+    if slack_channel:
+        caption = (
+            "Insider Action This Week — top stocks insiders bought and sold\n\n"
+            "#IDX #InsiderTrading #Indonesia #SectorsApp"
         )
         upload_posts_to_slack([(path, caption)], slack_channel=slack_channel)
 

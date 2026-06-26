@@ -1257,3 +1257,99 @@ def fetch_lq45_ytd_data(top_n: int = 15, direction: str = "worst"):
         "end_date": str(df_daily["date"].max())[:10],
         "direction": direction,
     }
+
+
+def fetch_weekly_insider_aggregates(window_days: int = 7, top_n: int = 5):
+    """Insider buy/sell aggregates over the trailing N days.
+
+    Aggregates `idx_filings` rows where `holder_type='insider'` over the last
+    `window_days`, grouping by symbol. Returns top `top_n` by total buy_value
+    and top `top_n` by total sell_value (separately).
+
+    Returns {} when there isn't enough data, else:
+      {"buys": [rows], "sells": [rows], "window": (start, end), "n_filings": int}
+    each row: symbol, base_symbol, company_name, total_value, n_filings,
+              top_holder.
+    """
+    since = (datetime.now() - timedelta(days=window_days)).isoformat()
+    df = fetch_supabase_table(
+        "idx_filings",
+        columns="symbol,transaction_type,transaction_value,holder_type,holder_name,created_at",
+        since_column="created_at",
+        since_value=since,
+    )
+    if df.empty:
+        return {}
+
+    df = df[df["holder_type"] == "insider"]
+    df["transaction_value"] = pd.to_numeric(df["transaction_value"], errors="coerce")
+    df = df.dropna(subset=["transaction_value", "symbol"])
+    df = df[df["transaction_value"] > 0]
+    if df.empty:
+        return {}
+
+    buys_df = df[df["transaction_type"] == "buy"]
+    sells_df = df[df["transaction_type"] == "sell"]
+
+    def _aggregate(side_df):
+        if side_df.empty:
+            return pd.DataFrame()
+        agg = (
+            side_df.groupby("symbol", as_index=False)
+                   .agg(
+                       total_value=("transaction_value", "sum"),
+                       n_filings=("transaction_value", "count"),
+                   )
+        )
+        # Per-symbol: largest single filing's holder name is the "top holder".
+        top_holder = (
+            side_df.sort_values("transaction_value", ascending=False)
+                   .groupby("symbol", as_index=False)
+                   .first()[["symbol", "holder_name"]]
+                   .rename(columns={"holder_name": "top_holder"})
+        )
+        agg = agg.merge(top_holder, on="symbol", how="left")
+        agg["base_symbol"] = agg["symbol"].str.replace(".JK", "", regex=False)
+        return agg
+
+    buys_agg = _aggregate(buys_df).sort_values("total_value", ascending=False).head(top_n)
+    sells_agg = _aggregate(sells_df).sort_values("total_value", ascending=False).head(top_n)
+
+    if buys_agg.empty and sells_agg.empty:
+        return {}
+
+    # Enrich with company names from idx_company_report.
+    all_syms = list(set(buys_agg["symbol"].tolist() + sells_agg["symbol"].tolist()))
+    if all_syms:
+        profiles = fetch_supabase_table(
+            "idx_company_report",
+            columns="symbol,company_name",
+            query_modifier=lambda q: q.in_("symbol", all_syms),
+        )
+        sym_to_name = (
+            dict(zip(profiles["symbol"], profiles["company_name"]))
+            if not profiles.empty
+            else {}
+        )
+    else:
+        sym_to_name = {}
+
+    def _enrich(agg):
+        if agg.empty:
+            return agg
+        agg = agg.copy()
+        agg["company_name"] = agg["symbol"].map(sym_to_name).fillna("")
+        return agg
+
+    buys_agg = _enrich(buys_agg)
+    sells_agg = _enrich(sells_agg)
+
+    end = pd.Timestamp.now().normalize()
+    start = end - pd.Timedelta(days=window_days)
+
+    return {
+        "buys": buys_agg.to_dict(orient="records"),
+        "sells": sells_agg.to_dict(orient="records"),
+        "window": (start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")),
+        "n_filings": int(len(df)),
+    }
