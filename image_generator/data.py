@@ -1,4 +1,4 @@
-from pathlib import Path
+﻿from pathlib import Path
 from datetime import date, datetime, timedelta
 import numpy as np
 import pandas as pd
@@ -389,7 +389,7 @@ def _fetch_weekly_flow_top5(week_start: str, week_end: str, ascending: bool) -> 
     top5 = stock_stats.sort_values("foreign_net", ascending=ascending).head(5)
     profiles = fetch_company_profiles()
 
-    # Per-(broker, stock) weekly net — needed for top broker chips
+    # Per-(broker, stock) weekly net â€” needed for top broker chips
     bs = df.groupby(
         ["broker_code", "broker_name", "is_foreign", "cohort", "symbol"],
         as_index=False, dropna=False,
@@ -400,7 +400,7 @@ def _fetch_weekly_flow_top5(week_start: str, week_end: str, ascending: bool) -> 
         sym = stock["symbol"]
         sub_bs = bs[(bs["symbol"] == sym) & (bs["is_foreign"] == True)]
 
-        if ascending:  # distribution → top foreign sellers
+        if ascending:  # distribution â†’ top foreign sellers
             tops = (
                 sub_bs[sub_bs["broker_stock_net"] < 0]
                 .sort_values("broker_stock_net", ascending=True)
@@ -408,7 +408,7 @@ def _fetch_weekly_flow_top5(week_start: str, week_end: str, ascending: bool) -> 
                 .rename(columns={"broker_stock_net": "net_idr"})
             )
             key = "sellers"
-        else:  # accumulation → top foreign buyers
+        else:  # accumulation â†’ top foreign buyers
             tops = (
                 sub_bs[sub_bs["broker_stock_net"] > 0]
                 .sort_values("broker_stock_net", ascending=False)
@@ -895,9 +895,9 @@ def fetch_idx_daily_data(symbol: str, from_date: str) -> list[dict]:
 def fetch_foreign_flow_data(window_days: int = 7, top_n: int = 8, mcap_rank_max: int = 200):
     """Market-wide foreign net flow leaderboard over the last ~week of trading.
 
-    Aggregates per-symbol foreign net value (IDR) = Σ (foreign_buy_volume −
-    foreign_sell_volume) × close across the window, then ranks the strongest
-    net-bought and net-sold names. Multi-ticker — the whole post compares stocks
+    Aggregates per-symbol foreign net value (IDR) = Î£ (foreign_buy_volume âˆ’
+    foreign_sell_volume) Ã— close across the window, then ranks the strongest
+    net-bought and net-sold names. Multi-ticker â€” the whole post compares stocks
     against each other, so unlike the per-stock anomaly post there is no single
     subject. Restricted to liquid top-mcap names so the board isn't dominated by
     thin small-caps where a single block trade swamps the ratio.
@@ -931,7 +931,7 @@ def fetch_foreign_flow_data(window_days: int = 7, top_n: int = 8, mcap_rank_max:
     if df_daily.empty:
         return {}
 
-    # Per-row foreign flow in IDR (volume is in shares, so × close = rupiah).
+    # Per-row foreign flow in IDR (volume is in shares, so Ã— close = rupiah).
     df_daily["net_value"] = (
         (df_daily["foreign_buy_volume"] - df_daily["foreign_sell_volume"]) * df_daily["close"]
     )
@@ -965,3 +965,97 @@ def fetch_foreign_flow_data(window_days: int = 7, top_n: int = 8, mcap_rank_max:
         "window": window,
         "trading_days": trading_days,
     }
+
+
+def fetch_weekly_movers_data(top_n: int = 10, mcap_rank_max: int = 100):
+    """Weekly winners + losers leaderboard from the top-mcap universe.
+
+    Window = the current Mon-Fri calendar week. If the function runs on Sat or
+    Sun (or after market close on Fri, which is the intended schedule), the
+    window is this week's Mon â†’ Fri. Computes per-symbol return from
+    `idx_daily_data.close[Mon]` to `close[Fri]`, restricted to stocks whose
+    `market_cap_rank` is in the top `mcap_rank_max`. Returns the top `top_n`
+    winners and losers. Filtering to liquid names keeps thin small-caps with
+    stale prices out of the board.
+
+    Returns {} when there isn't enough data, else:
+      {"winners": [rows], "losers": [rows], "window": (start, end), "trading_days": int}
+    each row: symbol, base_symbol, company_name, sub_sector,
+              first_close, last_close, weekly_return.
+    """
+    df_compro = fetch_supabase_table(
+        "idx_company_report",
+        columns="symbol,company_name,market_cap_rank,sub_sector",
+        query_modifier=lambda q: q.lte("market_cap_rank", mcap_rank_max),
+    )
+    if df_compro.empty:
+        return {}
+
+    # Anchor the window to the current calendar week (Mon-Fri). On a Sat or
+    # Sun the "current week" is the just-completed one; on Mon-Fri it's the
+    # in-flight week (so a mid-week debug run still returns partial data).
+    today = pd.Timestamp.now().normalize()
+    if today.weekday() >= 5:  # Sat or Sun
+        # Go back to last Friday, then derive that week's Monday.
+        last_friday = today - pd.Timedelta(days=today.weekday() - 4)
+        week_monday = last_friday - pd.Timedelta(days=4)
+        week_friday = last_friday
+    else:
+        week_monday = today - pd.Timedelta(days=today.weekday())
+        week_friday = week_monday + pd.Timedelta(days=4)
+    since = week_monday.strftime("%Y-%m-%d")
+    until = week_friday.strftime("%Y-%m-%d")
+
+    df_daily = fetch_supabase_table(
+        "idx_daily_data",
+        columns="symbol,date,close",
+        query_modifier=lambda q: q.in_("symbol", df_compro["symbol"].tolist())
+                                  .gte("date", since)
+                                  .lte("date", until),
+    )
+    if df_daily.empty:
+        return {}
+
+    df_daily["close"] = pd.to_numeric(df_daily["close"], errors="coerce")
+    df_daily = df_daily.dropna(subset=["close"])
+    df_daily = df_daily[df_daily["close"] > 0]
+    if df_daily.empty:
+        return {}
+
+    df_daily["date"] = pd.to_datetime(df_daily["date"])
+    df_daily = df_daily.sort_values(["symbol", "date"])
+
+    grp = df_daily.groupby("symbol")
+    perf = pd.DataFrame({
+        "first_close": grp["close"].first(),
+        "last_close": grp["close"].last(),
+        "n_points": grp["close"].count(),
+    }).reset_index()
+    # Need at least 2 datapoints to compute a return.
+    perf = perf[perf["n_points"] >= 2]
+    if perf.empty:
+        return {}
+
+    perf["weekly_return"] = (perf["last_close"] - perf["first_close"]) / perf["first_close"]
+    perf = perf.merge(df_compro[["symbol", "company_name", "sub_sector"]], on="symbol", how="left")
+    perf["base_symbol"] = perf["symbol"].str.replace(".JK", "", regex=False)
+
+    trading_days = int(df_daily["date"].nunique())
+    window = (str(df_daily["date"].min())[:10], str(df_daily["date"].max())[:10])
+
+    def _rows(frame):
+        return frame.to_dict(orient="records")
+
+    winners = perf.sort_values("weekly_return", ascending=False).head(top_n)
+    losers = perf.sort_values("weekly_return", ascending=True).head(top_n)
+
+    if winners.empty and losers.empty:
+        return {}
+
+    return {
+        "winners": _rows(winners),
+        "losers": _rows(losers),
+        "window": window,
+        "trading_days": trading_days,
+    }
+

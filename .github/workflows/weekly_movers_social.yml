@@ -1,0 +1,51 @@
+name: Generate and Post Weekly Movers
+
+on:
+  # Scheduled trigger lives in cron-job.org (calls workflow_dispatch via GitHub REST API).
+  # GH Actions cron suffered 5h+ queue drift; cron-job.org gives sub-minute precision.
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Slack channel/DM ID, default = #visuals'
+        required: false
+        default: 'C04RC79U5NK'
+
+jobs:
+  generate_and_post:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libharfbuzz-dev libfribidi-dev
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Weekly Movers Image Generator
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        run: |
+          CHANNEL="${{ github.event.inputs.channel || 'C04RC79U5NK' }}"
+          python -m image_generator.workflow_cli weekly-movers --slack-channel "$CHANNEL"
+
+      - name: Upload generated PNGs as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-movers-cards
+          path: output/weekly_movers*.png
+          if-no-files-found: warn
+          retention-days: 7

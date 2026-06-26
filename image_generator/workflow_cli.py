@@ -9,6 +9,7 @@ from .renderers.dividend import DividendRenderer
 from .renderers.volume_spike import VolumeSpikeRenderer
 from .renderers.anomalies_changes import AnomalyChangesRenderer
 from .renderers.foreign_flow import ForeignFlowRenderer
+from .renderers.winners_losers import WinnersLosersRenderer
 from .utils.slack import upload_posts_to_slack
 from .classification import (
     prepare_data_by_mcap, 
@@ -26,6 +27,7 @@ from .data import (
     fetch_volume_spike_data,
     fetch_anomaly_data,
     fetch_foreign_flow_data,
+    fetch_weekly_movers_data,
 )
 from .utils.io_helper import load_dividend_state, save_dividend_state
 
@@ -299,6 +301,33 @@ def foreign_flow(
             for path in paths
         ]
         upload_posts_to_slack(posts, slack_channel=slack_channel)
+
+@app.command("weekly-movers")
+def weekly_movers(
+    output: Path = typer.Option(Path("output"), "--output", "-o"),
+    slack_channel: str | None = typer.Option(None, "--slack-channel"),
+):
+    renderer = WinnersLosersRenderer(output_dir=output)
+
+    data = fetch_weekly_movers_data()
+    if not data or (not data.get("winners") and not data.get("losers")):
+        typer.echo("Skipping weekly-movers: no data")
+        raise typer.Exit(code=0)
+
+    typer.echo(
+        f"Rendering weekly movers ({len(data.get('winners', []))} winners, "
+        f"{len(data.get('losers', []))} losers) over {data.get('trading_days')} trading days..."
+    )
+    path = renderer.render(data=data)
+    typer.echo(path.resolve())
+
+    if slack_channel:
+        caption = (
+            "Week's Winners & Losers — top 100 by market cap\n\n"
+            "#IDX #StockMarket #Indonesia #SectorsApp"
+        )
+        upload_posts_to_slack([(path, caption)], slack_channel=slack_channel)
+
 
 if __name__ == "__main__":
     app()
