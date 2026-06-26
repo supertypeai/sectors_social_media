@@ -1,0 +1,55 @@
+name: Generate and Post LQ45 YTD
+
+on:
+  # Scheduled trigger lives in cron-job.org (calls workflow_dispatch via GitHub REST API).
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Slack channel/DM ID, default = #visuals'
+        required: false
+        default: 'C04RC79U5NK'
+      direction:
+        description: "'worst' or 'best'"
+        required: false
+        default: 'worst'
+
+jobs:
+  generate_and_post:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libharfbuzz-dev libfribidi-dev
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run LQ45 YTD Image Generator
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        run: |
+          CHANNEL="${{ github.event.inputs.channel || 'C04RC79U5NK' }}"
+          DIRECTION="${{ github.event.inputs.direction || 'worst' }}"
+          python -m image_generator.workflow_cli lq45-ytd --slack-channel "$CHANNEL" --direction "$DIRECTION"
+
+      - name: Upload generated PNGs as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lq45-ytd-cards
+          path: output/lq45_ytd*.png
+          if-no-files-found: warn
+          retention-days: 7

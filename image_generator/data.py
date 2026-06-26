@@ -1177,3 +1177,83 @@ def fetch_weekly_sector_data(mcap_rank_max: int = 300):
         "window": window,
         "trading_days": trading_days,
     }
+
+
+def fetch_lq45_ytd_data(top_n: int = 15, direction: str = "worst"):
+    """LQ45 stocks ranked by YTD price return for the current year.
+
+    LQ45 is IDX's 45-most-liquid-stocks index. Returns the `top_n` worst (or
+    best, if `direction="best"`) YTD performers as of the most recent close
+    available in `idx_daily_data`. YTD is computed from the first close in
+    January vs the latest close.
+
+    Returns {} when there isn't enough data, else:
+      {"rows": [rows], "start_date": str, "end_date": str, "direction": str}
+    each row: symbol, base_symbol, company_name, first_close, last_close,
+              ytd_return.
+    """
+    df_compro = fetch_supabase_table(
+        "idx_company_report",
+        columns="symbol,company_name,indices",
+        query_modifier=lambda q: q.lte("market_cap_rank", 200),
+    )
+    if df_compro.empty:
+        return {}
+
+    def is_lq45(idx):
+        if idx is None:
+            return False
+        if isinstance(idx, list):
+            return any("LQ45" in str(x) for x in idx)
+        return "LQ45" in str(idx)
+
+    df_lq45 = df_compro[df_compro["indices"].apply(is_lq45)]
+    if df_lq45.empty:
+        return {}
+
+    today = pd.Timestamp.now().normalize()
+    jan1 = pd.Timestamp(year=today.year, month=1, day=1)
+    since = jan1.strftime("%Y-%m-%d")
+
+    df_daily = fetch_supabase_table(
+        "idx_daily_data",
+        columns="symbol,date,close",
+        since_column="date",
+        since_value=since,
+        query_modifier=lambda q: q.in_("symbol", df_lq45["symbol"].tolist()),
+    )
+    if df_daily.empty:
+        return {}
+
+    df_daily["close"] = pd.to_numeric(df_daily["close"], errors="coerce")
+    df_daily = df_daily.dropna(subset=["close"])
+    df_daily = df_daily[df_daily["close"] > 0]
+    if df_daily.empty:
+        return {}
+
+    df_daily["date"] = pd.to_datetime(df_daily["date"])
+    df_daily = df_daily.sort_values(["symbol", "date"])
+
+    grp = df_daily.groupby("symbol")
+    perf = pd.DataFrame({
+        "first_close": grp["close"].first(),
+        "last_close": grp["close"].last(),
+        "n_points": grp["close"].count(),
+    }).reset_index()
+    perf = perf[perf["n_points"] >= 2]
+    if perf.empty:
+        return {}
+
+    perf["ytd_return"] = (perf["last_close"] - perf["first_close"]) / perf["first_close"]
+    perf = perf.merge(df_lq45[["symbol", "company_name"]], on="symbol", how="left")
+    perf["base_symbol"] = perf["symbol"].str.replace(".JK", "", regex=False)
+
+    ascending = direction == "worst"
+    ranked = perf.sort_values("ytd_return", ascending=ascending).head(top_n)
+
+    return {
+        "rows": ranked.to_dict(orient="records"),
+        "start_date": str(df_daily["date"].min())[:10],
+        "end_date": str(df_daily["date"].max())[:10],
+        "direction": direction,
+    }

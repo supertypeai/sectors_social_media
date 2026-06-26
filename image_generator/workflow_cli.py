@@ -11,6 +11,7 @@ from .renderers.anomalies_changes import AnomalyChangesRenderer
 from .renderers.foreign_flow import ForeignFlowRenderer
 from .renderers.winners_losers import WinnersLosersRenderer
 from .renderers.sector_heatmap import SectorHeatmapRenderer
+from .renderers.lq45_ytd import LQ45YTDRenderer
 from .utils.slack import upload_posts_to_slack
 from .classification import (
     prepare_data_by_mcap, 
@@ -30,6 +31,7 @@ from .data import (
     fetch_foreign_flow_data,
     fetch_weekly_movers_data,
     fetch_weekly_sector_data,
+    fetch_lq45_ytd_data,
 )
 from .utils.io_helper import load_dividend_state, save_dividend_state
 
@@ -354,6 +356,32 @@ def sector_heatmap(
         caption = (
             "IDX Sector Heat Map — weekly performance by sector\n\n"
             "#IDX #StockMarket #Indonesia #SectorsApp"
+        )
+        upload_posts_to_slack([(path, caption)], slack_channel=slack_channel)
+
+
+@app.command("lq45-ytd")
+def lq45_ytd(
+    output: Path = typer.Option(Path("output"), "--output", "-o"),
+    slack_channel: str | None = typer.Option(None, "--slack-channel"),
+    direction: str = typer.Option("worst", "--direction", help="'worst' or 'best'"),
+):
+    renderer = LQ45YTDRenderer(output_dir=output)
+
+    data = fetch_lq45_ytd_data(direction=direction)
+    if not data or not data.get("rows"):
+        typer.echo("Skipping lq45-ytd: no data")
+        raise typer.Exit(code=0)
+
+    typer.echo(f"Rendering LQ45 {direction} YTD ({len(data['rows'])} rows)...")
+    path = renderer.render(data=data)
+    typer.echo(path.resolve())
+
+    if slack_channel:
+        verb = "Worst" if direction == "worst" else "Best"
+        caption = (
+            f"{verb} YTD performers in LQ45 — based on year-to-date close prices\n\n"
+            "#IDX #LQ45 #StockMarket #Indonesia #SectorsApp"
         )
         upload_posts_to_slack([(path, caption)], slack_channel=slack_channel)
 
