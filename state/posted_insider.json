@@ -116,6 +116,16 @@
       "move": 0.8614,
       "posted_at": "2026-06-21"
     },
+    "chain:karnadi margaka:GPSO:sell:3mo": {
+      "move": null,
+      "posted_at": "2026-06-28",
+      "superseded": true
+    },
+    "chain:karnadi margaka:GPSO:sell:6mo": {
+      "move": null,
+      "posted_at": "2026-06-28",
+      "superseded": true
+    },
     "chain:madhani nusantara talatah:DEWA:sell:3mo": {
       "move": null,
       "posted_at": "2026-06-14"
@@ -133,10 +143,23 @@
       "posted_at": "2026-06-14",
       "skipped": true
     },
+    "cluster:BBCA:buy:3mo": {
+      "move": null,
+      "posted_at": "2026-06-28",
+      "skipped": true
+    },
     "cluster:CDIA:buy:3mo": {
       "move": null,
       "posted_at": "2026-06-14",
       "skipped": true
+    },
+    "cluster:GPSO:sell:3mo": {
+      "move": null,
+      "posted_at": "2026-06-28"
+    },
+    "cluster:GPSO:sell:6mo": {
+      "move": -0.6836,
+      "posted_at": "2026-06-28"
     },
     "cluster:MAPB:sell:3mo": {
       "move": null,
