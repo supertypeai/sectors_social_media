@@ -1,5 +1,7 @@
-﻿from pathlib import Path
-from datetime import date, datetime, timedelta
+from pathlib import Path
+from datetime import date, datetime, timedelta, timezone
+from collections import defaultdict
+
 import numpy as np
 import pandas as pd
 import json
@@ -1371,3 +1373,152 @@ def fetch_weekly_insider_aggregates(window_days: int = 7, top_n: int = 5):
         "window": (start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")),
         "n_filings": int(len(df)),
     }
+
+
+def fetch_macro_news(th_score: int = 80):
+    macro_tags = [
+        "Central Bank",
+        "Currency & FX",
+        "Forex",
+        "Inflation",
+        "Interest Rate",
+        "Global Economy",
+        "Government Policy",
+        "Tariff & VAT",
+    ]
+
+    tags_array = "{" + ",".join(macro_tags) + "}"
+
+    seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
+
+    records = fetch_supabase_table(
+        table_name="idx_news",
+        order_column="timestamp",
+        order_desc=True,
+        since_column="timestamp",
+        since_value=seven_days_ago,
+        query_modifier=lambda query: (
+            query
+            .filter("tags", "ov", tags_array)
+            .filter("tickers", "eq", "{}")
+            .filter("score", "gt", th_score)
+        ),
+    ).to_dict(orient="records")
+
+    print(f'length macro news: {len(records)}')
+
+    return records
+
+
+def fetch_stock_indices(target_indices: list[str]):
+    records = fetch_supabase_table(
+        table_name='idx_company_profile', 
+        columns='symbol, company_name, indices',
+        query_modifier=lambda query: (
+            query
+            .overlaps("indices", target_indices)
+        )
+    ).to_dict(orient='records')
+
+    companies = {}
+
+    for record in records: 
+        companies[record['symbol']] = {
+            "company_name": record["company_name"],
+            "indices": [
+                company_index 
+                for company_index in record['indices']
+                if company_index in target_indices
+            ]
+        }
+
+    return companies 
+
+
+def fetch_index_performance(target_indices: list[str], day: int = 7) -> float | None:
+    lookback_date = datetime.now() - timedelta(days=day)
+
+    df = fetch_supabase_table(
+        table_name="index_daily_data",
+        columns="date, price, index_code",
+        query_modifier=lambda query: query
+            .in_("index_code", target_indices)
+            .gte("date", (lookback_date - timedelta(days=day)).strftime("%Y-%m-%d"))
+            .order("date", desc=False)
+    )
+
+    if df.empty:
+        return None
+
+    df["date"] = pd.to_datetime(df["date"])
+    
+    result = {}
+
+    for index, group in df.groupby("index_code"):
+        latest = group.iloc[-1]["price"]
+        previous_rows = group[group["date"] <= lookback_date]
+
+        if previous_rows.empty:
+            result[index] = None
+            continue
+
+        previous = previous_rows.iloc[-1]["price"]
+        result[index] = float((latest - previous) / previous * 100)
+
+    return result
+
+
+def fetch_stock_performance(companies: dict, day: int = 7) -> dict:
+    lookback_date = datetime.now() - timedelta(days=day)
+
+    df_daily = fetch_supabase_table(
+        "idx_daily_data",
+        columns="symbol,close,date",
+        since_column="date",
+        since_value=(lookback_date - timedelta(days=day)).strftime("%Y-%m-%d"),  #buffer
+        order_column="date",
+        order_desc=False,
+        query_modifier=lambda query: (
+            query.in_("symbol", list(companies.keys()))
+        ),
+    )
+
+    df_daily["date"] = pd.to_datetime(df_daily["date"])
+
+    for symbol, daily_data in df_daily.groupby("symbol", sort=False):
+        latest = daily_data.iloc[-1]
+
+        previous_rows = daily_data[daily_data["date"] <= lookback_date]
+        
+        if previous_rows.empty:
+            continue
+
+        previous = previous_rows.iloc[-1]
+
+        latest_close = latest["close"].item()
+        previous_close = previous["close"].item()
+
+        companies[symbol]["performance"] = {
+            "latest_close": latest_close,
+            f"close_{day}d": previous_close,
+            f"return_{day}d": (latest_close - previous_close) / previous_close * 100,
+        }
+
+    return companies
+
+
+def group_companies_by_index(companies: dict):
+    companies_by_index = defaultdict(list)
+
+    for symbol, company in companies.items(): 
+        if "performance" not in company:
+            continue
+
+        for index in company['indices']:
+            companies_by_index[index].append({
+                "symbol": symbol,
+                "company_name": company["company_name"],
+                **company["performance"],
+            }) 
+
+    return dict(companies_by_index)

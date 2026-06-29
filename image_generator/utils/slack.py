@@ -5,7 +5,7 @@ import requests as http_requests
 import os 
 
 
-def upload_posts_to_slack(posts: list, slack_channel: str | None = None) -> list:
+def upload_posts_to_slack(posts: list[str | tuple], slack_channel: str | None = None) -> list:
     """ 
     Upload posts to Slack as a single batched message when multiple images
     are provided. Returns the list of paths that were actually uploaded.

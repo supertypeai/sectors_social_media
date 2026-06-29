@@ -1,5 +1,6 @@
 from pathlib import Path
-from datetime import date 
+from datetime import date, datetime
+import tldextract
 
 from .renderers.quarterly import QuarterlyRenderer
 from .renderers.top_movers import TopCompaniesMoversRenderer
@@ -15,6 +16,9 @@ from .renderers.winners_losers import WinnersLosersRenderer
 from .renderers.sector_heatmap import SectorHeatmapRenderer
 from .renderers.lq45_ytd import LQ45YTDRenderer
 from .renderers.insider_roundup import InsiderRoundupRenderer
+from .renderers.macro_news import MacroNewsRenderer
+from .renderers.stock_performance import StockPerformanceRenderer
+from .render import BACKGROUND_DIR
 from .utils.slack import upload_posts_to_slack
 from .classification import (
     prepare_data_by_mcap,
@@ -38,7 +42,13 @@ from .data import (
     fetch_weekly_sector_data,
     fetch_lq45_ytd_data,
     fetch_weekly_insider_aggregates,
+    fetch_macro_news,
+    fetch_stock_indices,
+    fetch_stock_performance,
+    fetch_index_performance,
+    group_companies_by_index
 )
+from .summarizer import NewsSummarizer
 from .utils.io_helper import load_dividend_state, save_dividend_state
 from .triggers import (
     load_ownership_state,
@@ -53,6 +63,7 @@ from .triggers import (
 )
 
 import typer
+import time 
 
 
 app = typer.Typer(help="Run Sectors social media generation jobs.")
@@ -323,6 +334,7 @@ def foreign_flow(
         ]
         upload_posts_to_slack(posts, slack_channel=slack_channel)
 
+
 @app.command("ownership")
 def ownership(
     output: Path = typer.Option(Path("output"), "--output", "-o"),
@@ -408,6 +420,152 @@ def ownership_board(
             symbols = [str(p["symbol"]).upper().split(".")[0] for p in board]
             record_board(state, key, symbols, date.today())
             save_ownership_board_state(state)
+
+
+@app.command("macro-news")
+def macro_news(
+    output: Path = typer.Option(Path("output"), "--output", "-o"),
+    slack_channel: str | None = typer.Option(None, "--slack-channel"),
+    render_scale: float = typer.Option(1.0, "--render-scale"),
+):
+    today = datetime.now()
+    period_label = f"{today.strftime("%Y-%m-%d")}"
+
+    summarizer = NewsSummarizer()
+    renderer = MacroNewsRenderer(
+        template_path=BACKGROUND_DIR / "IDX - News 1.png",
+        period_label=period_label,
+        output_dir=output,
+        render_scale=render_scale,
+    )
+
+    records = fetch_macro_news(th_score=85)
+
+    if not records: 
+        typer.echo("Skipping macro-news: no records found")
+        raise typer.Exit(code=0)
+
+    records = sorted(
+        records, 
+        key=lambda record: record['score'],
+        reverse=True
+    )
+
+    slides = []
+
+    for record in records:
+        source = tldextract.extract(record['source'])
+
+        slide = summarizer.generate_macro_slide(
+            title=record['title'],
+            body=record['body'],
+            tags=record['tags'],
+        )
+
+        if not slide:
+            continue
+
+        slide['source'] = source.domain
+
+        slides.append(slide)
+        time.sleep(5)
+
+    if not slides:
+        typer.echo("Skipping macro-news: no records found")
+        raise typer.Exit(code=0)
+
+    paths = []
+
+    for index, slide in enumerate(slides):
+        path = renderer.render(
+            data=slide,
+            filename=f'macro_news_test_{index + 1}.png',
+        )
+
+        typer.echo(path.resolve())
+        paths.append(path)
+
+    if slack_channel and paths:
+        caption = "Macro News\n\n#IDX #StockMarket #Indonesia #MacroNews #SectorsApp"
+        posts = [(paths[0], caption), *paths[1:]]
+
+        upload_posts_to_slack(posts, slack_channel=slack_channel)
+
+
+@app.command("stock-performance")
+def stock_performance(
+    output: Path = typer.Option(Path("output"), "--output", "-o"),
+    slack_channel: str | None = typer.Option(None, "--slack-channel"),
+    target_indices: list[str] = typer.Option(["LQ45", "JII70", "IDXBUMN20"], "--target-indices"),
+    render_scale: float = typer.Option(1.0, "--render-scale"),
+    day: int = typer.Option(7, "--day"),
+):
+    renderer = StockPerformanceRenderer(
+        template_path=BACKGROUND_DIR / "volume_spike.png",
+        render_scale=render_scale,
+        output_dir=output,
+    )
+
+    today = datetime.now()
+
+    indices_performance = fetch_index_performance(
+        target_indices=target_indices,
+        day=day,
+    )
+
+    companies = fetch_stock_indices(target_indices)
+    companies = fetch_stock_performance(companies=companies, day=day)
+    data_indices = group_companies_by_index(companies)
+
+    paths = []
+
+    for company_index in target_indices:
+        return_key = f"return_{day}d"
+
+        records_gainers = sorted(
+            data_indices[company_index],
+            key=lambda record: record[return_key],
+            reverse=True,
+        )
+
+        records_losers = sorted(
+            data_indices[company_index],
+            key=lambda record: record[return_key],
+            reverse=False,
+        )
+
+        path_gainers = renderer.render(
+            index_name=company_index,
+            records=records_gainers,
+            index_performance=indices_performance.get(company_index),
+            as_of_date=today.strftime("%Y-%m-%d"),
+            filename=f"{day}_stock_performance_gainers_{company_index.lower()}.png",
+            direction="gainers",
+            day=day,
+        )
+
+        path_losers = renderer.render(
+            index_name=company_index,
+            records=records_losers,
+            as_of_date=today.strftime("%Y-%m-%d"),
+            index_performance=indices_performance.get(company_index),
+            filename=f"{day}_stock_performance_losers_{company_index.lower()}.png",
+            direction="losers",
+            day=day,
+        )
+
+        paths.append(path_gainers)
+        paths.append(path_losers)
+
+    for path in paths:
+        typer.echo(path.resolve())
+
+    if slack_channel and paths:
+        caption = "Stock Performance\n\n#IDX #StockMarket #Indonesia #StockPerformance #SectorsApp"
+        posts = [(paths[0], caption), *paths[1:]]
+        upload_posts_to_slack(posts, slack_channel=slack_channel)
+
+
 @app.command("weekly-movers")
 def weekly_movers(
     output: Path = typer.Option(Path("output"), "--output", "-o"),
@@ -517,4 +675,3 @@ def insider_roundup(
 
 if __name__ == "__main__":
     app()
-

@@ -15,6 +15,8 @@ on:
           - quarterly
           - companies-mover
           - dividend
+          - macro-news
+          - stock-performance
 
       channel:
         description: 'Slack channel/DM ID, default = #visuals'
@@ -46,32 +48,18 @@ jobs:
       - name: Resolve run mode
         id: resolve_mode
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "mode=${{ github.event.inputs.mode }}" >> "$GITHUB_OUTPUT"
-            echo "channel=${{ github.event.inputs.channel || 'C04RC79U5NK' }}" >> "$GITHUB_OUTPUT"
-          
-          elif [ "${{ github.event.schedule }}" = "0 13 * * 5" ]; then
-            echo "mode=quarterly" >> "$GITHUB_OUTPUT"
-            echo "channel=C04RC79U5NK" >> "$GITHUB_OUTPUT"
-
-          elif [ "${{ github.event.schedule }}" = "0 12 1 * *" ]; then
-            echo "mode=companies-mover" >> "$GITHUB_OUTPUT"
-            echo "channel=C04RC79U5NK" >> "$GITHUB_OUTPUT"
-
-          elif [ "${{ github.event.schedule }}" = "0 12 * * *" ]; then
-            echo "mode=dividend" >> "$GITHUB_OUTPUT"
-            echo "channel=C04RC79U5NK" >> "$GITHUB_OUTPUT"
-
-          else
-            echo "Unknown trigger"
-            exit 1
-          fi
+          echo "mode=${{ github.event.inputs.mode }}" >> "$GITHUB_OUTPUT"
+          echo "channel=${{ github.event.inputs.channel || 'C04RC79U5NK' }}" >> "$GITHUB_OUTPUT"
 
       - name: Run Workflow Social Image Generator
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_API_KEY2: ${{ secrets.GEMINI_API_KEY2 }}
+          GEMINI_API_KEY3: ${{ secrets.GEMINI_API_KEY3 }}
         run: |
+          echo "Running mode=${{ steps.resolve_mode.outputs.mode }} channel=${{ steps.resolve_mode.outputs.channel }}"
           python -m image_generator.workflow_cli "${{ steps.resolve_mode.outputs.mode }}" \
             --slack-channel "${{ steps.resolve_mode.outputs.channel }}"

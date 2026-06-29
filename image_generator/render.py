@@ -500,29 +500,39 @@ class SocialImageRenderer(InsiderEarningsRendererMixin):
         
         draw_wrapped(draw, (name_x, name_y), full_name, name_fnt, COLORS["soft_ink"], width - (name_x - x) - 20, line_gap=4, max_lines=2)
 
-    def _logo(self, image, xy, symbol, size=100, accent=COLORS["pink"]):
+    def _logo(self, image, xy, symbol, size=100, accent=COLORS["pink"], extension="webp"):
         # Clean symbol (remove .JK if present)
         symbol = str(symbol).upper().split(".")[0]
         x, y = xy
-        logo_path = LOGO_CACHE_DIR / f"{symbol}.webp"
-        
-        logo_img = None
-        if logo_path.exists():
-            try:
-                logo_img = Image.open(logo_path).convert("RGBA")
-            except Exception:
-                pass
 
-        if not logo_img:
-            url = f"https://storage.googleapis.com/sectorsapp/logo/{symbol}.webp"
-            try:
-                resp = requests.get(url, timeout=4)
-                if resp.status_code == 200:
-                    logo_img = Image.open(BytesIO(resp.content)).convert("RGBA")
-                    with open(logo_path, "wb") as f:
-                        f.write(resp.content)
-            except Exception:
-                pass
+        logo_img = None
+        fallback_exts = [extension] if extension == "webp" else [extension, "webp"]
+        
+        for ext in fallback_exts:
+            cache_path = LOGO_CACHE_DIR / f"{symbol}.{ext}"
+            
+            if cache_path.exists():
+                try:
+                    logo_img = Image.open(cache_path).convert("RGBA")
+                    break
+                
+                except Exception:
+                    pass
+
+            if not logo_img:
+                url = f"https://storage.googleapis.com/sectorsapp/logo/{symbol}.{ext}"
+                try:
+                    resp = requests.get(url, timeout=4)
+                    
+                    if resp.status_code == 200:
+                        logo_img = Image.open(BytesIO(resp.content)).convert("RGBA")
+                        
+                        with open(cache_path, "wb") as f:
+                            f.write(resp.content)
+                        
+                        break
+                except Exception:
+                    pass
 
         if logo_img:
             # Resize and mask to circle
