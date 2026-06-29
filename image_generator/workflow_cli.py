@@ -11,6 +11,10 @@ from .renderers.anomalies_changes import AnomalyChangesRenderer
 from .renderers.foreign_flow import ForeignFlowRenderer
 from .renderers.ownership import OwnershipRenderer
 from .renderers.ownership_board import OwnershipBoardRenderer
+from .renderers.winners_losers import WinnersLosersRenderer
+from .renderers.sector_heatmap import SectorHeatmapRenderer
+from .renderers.lq45_ytd import LQ45YTDRenderer
+from .renderers.insider_roundup import InsiderRoundupRenderer
 from .utils.slack import upload_posts_to_slack
 from .classification import (
     prepare_data_by_mcap,
@@ -30,6 +34,10 @@ from .data import (
     fetch_anomaly_data,
     fetch_foreign_flow_data,
     fetch_company_report_ownership,
+    fetch_weekly_movers_data,
+    fetch_weekly_sector_data,
+    fetch_lq45_ytd_data,
+    fetch_weekly_insider_aggregates,
 )
 from .utils.io_helper import load_dividend_state, save_dividend_state
 from .triggers import (
@@ -60,6 +68,7 @@ def quarterly(
     df_workflow = fetch_workflow_data(
         table_name="idx_workflow_data",
         columns="symbol, company_name, quarterly_low, quarterly_high",
+        required_columns=["quarterly_low", "quarterly_high"],
     )
 
     df_company_report = fetch_company_report()
@@ -68,9 +77,9 @@ def quarterly(
     payload_workflow = prepare_data_by_mcap(df_workflow, df_company_report)
 
     payload = select_quarterly_data(payload_ihsg_weekly, payload_workflow)
-
-    if not payload or len(payload) < 16:
-        typer.echo("Skipping quarterly: not enough data")
+   
+    if not payload:
+        typer.echo(f"Skipping quarterly: no data found to trigger render")
         raise typer.Exit(code=0)
 
     path = renderer.render(data=payload)
@@ -399,6 +408,111 @@ def ownership_board(
             symbols = [str(p["symbol"]).upper().split(".")[0] for p in board]
             record_board(state, key, symbols, date.today())
             save_ownership_board_state(state)
+@app.command("weekly-movers")
+def weekly_movers(
+    output: Path = typer.Option(Path("output"), "--output", "-o"),
+    slack_channel: str | None = typer.Option(None, "--slack-channel"),
+):
+    renderer = WinnersLosersRenderer(output_dir=output)
+
+    data = fetch_weekly_movers_data()
+    if not data or (not data.get("winners") and not data.get("losers")):
+        typer.echo("Skipping weekly-movers: no data")
+        raise typer.Exit(code=0)
+
+    typer.echo(
+        f"Rendering weekly movers ({len(data.get('winners', []))} winners, "
+        f"{len(data.get('losers', []))} losers) over {data.get('trading_days')} trading days..."
+    )
+    path = renderer.render(data=data)
+    typer.echo(path.resolve())
+
+    if slack_channel:
+        caption = (
+            "Week's Winners & Losers — top 100 by market cap\n\n"
+            "#IDX #StockMarket #Indonesia #SectorsApp"
+        )
+        upload_posts_to_slack([(path, caption)], slack_channel=slack_channel)
+
+
+@app.command("sector-heatmap")
+def sector_heatmap(
+    output: Path = typer.Option(Path("output"), "--output", "-o"),
+    slack_channel: str | None = typer.Option(None, "--slack-channel"),
+):
+    renderer = SectorHeatmapRenderer(output_dir=output)
+
+    data = fetch_weekly_sector_data()
+    if not data or not data.get("sectors"):
+        typer.echo("Skipping sector-heatmap: no data")
+        raise typer.Exit(code=0)
+
+    typer.echo(
+        f"Rendering sector heat map ({len(data['sectors'])} sectors, "
+        f"{data.get('trading_days')} trading days)..."
+    )
+    path = renderer.render(data=data)
+    typer.echo(path.resolve())
+
+    if slack_channel:
+        caption = (
+            "IDX Sector Heat Map — weekly performance by sector\n\n"
+            "#IDX #StockMarket #Indonesia #SectorsApp"
+        )
+        upload_posts_to_slack([(path, caption)], slack_channel=slack_channel)
+
+
+@app.command("lq45-ytd")
+def lq45_ytd(
+    output: Path = typer.Option(Path("output"), "--output", "-o"),
+    slack_channel: str | None = typer.Option(None, "--slack-channel"),
+    direction: str = typer.Option("worst", "--direction", help="'worst' or 'best'"),
+):
+    renderer = LQ45YTDRenderer(output_dir=output)
+
+    data = fetch_lq45_ytd_data(direction=direction)
+    if not data or not data.get("rows"):
+        typer.echo("Skipping lq45-ytd: no data")
+        raise typer.Exit(code=0)
+
+    typer.echo(f"Rendering LQ45 {direction} YTD ({len(data['rows'])} rows)...")
+    path = renderer.render(data=data)
+    typer.echo(path.resolve())
+
+    if slack_channel:
+        verb = "Worst" if direction == "worst" else "Best"
+        caption = (
+            f"{verb} YTD performers in LQ45 — based on year-to-date close prices\n\n"
+            "#IDX #LQ45 #StockMarket #Indonesia #SectorsApp"
+        )
+        upload_posts_to_slack([(path, caption)], slack_channel=slack_channel)
+
+
+@app.command("insider-roundup")
+def insider_roundup(
+    output: Path = typer.Option(Path("output"), "--output", "-o"),
+    slack_channel: str | None = typer.Option(None, "--slack-channel"),
+):
+    renderer = InsiderRoundupRenderer(output_dir=output)
+
+    data = fetch_weekly_insider_aggregates()
+    if not data or (not data.get("buys") and not data.get("sells")):
+        typer.echo("Skipping insider-roundup: no data")
+        raise typer.Exit(code=0)
+
+    typer.echo(
+        f"Rendering insider roundup ({len(data.get('buys', []))} buys, "
+        f"{len(data.get('sells', []))} sells, {data.get('n_filings')} filings)..."
+    )
+    path = renderer.render(data=data)
+    typer.echo(path.resolve())
+
+    if slack_channel:
+        caption = (
+            "Insider Action This Week — top stocks insiders bought and sold\n\n"
+            "#IDX #InsiderTrading #Indonesia #SectorsApp"
+        )
+        upload_posts_to_slack([(path, caption)], slack_channel=slack_channel)
 
 
 if __name__ == "__main__":

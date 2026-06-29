@@ -12,6 +12,12 @@
       "posted_at": "2026-06-17",
       "progress_count": 6
     },
+    "chain:buana graha utama:MICE:buy": {
+      "completed_date": "2026-06-18",
+      "completing_filing_id": 3870,
+      "posted_at": "2026-06-23",
+      "progress_count": 11
+    },
     "chain:dannacher patrick rudolf:CYBR:buy": {
       "completed_date": "2026-06-15",
       "completing_filing_id": 3850,
@@ -31,10 +37,10 @@
       "progress_count": 7
     },
     "chain:harimas perkasa tunggal:IMPC:buy": {
-      "completed_date": "2026-06-19",
-      "completing_filing_id": 3877,
-      "posted_at": "2026-06-19",
-      "progress_count": 3
+      "completed_date": "2026-06-25",
+      "completing_filing_id": 3911,
+      "posted_at": "2026-06-25",
+      "progress_count": 4
     },
     "chain:hasmoro:HEAL:buy": {
       "completed_date": "2026-06-08",
@@ -53,6 +59,24 @@
       "completing_filing_id": 3817,
       "posted_at": "2026-06-11",
       "progress_count": 4
+    },
+    "chain:prijono sugiarto:ASII:buy": {
+      "completed_date": "2026-06-24",
+      "completing_filing_id": 3903,
+      "posted_at": "2026-06-24",
+      "progress_count": 4
+    },
+    "cluster:ASII:buy": {
+      "completed_date": "2026-06-24",
+      "completing_filing_id": 3903,
+      "posted_at": "2026-06-24",
+      "progress_count": 6
+    },
+    "cluster:BIKE:sell": {
+      "completed_date": "2026-06-26",
+      "completing_filing_id": 3930,
+      "posted_at": "2026-06-26",
+      "progress_count": 3
     },
     "cluster:CYBR:sell": {
       "completed_date": "2026-06-16",
@@ -92,6 +116,16 @@
       "move": 0.8614,
       "posted_at": "2026-06-21"
     },
+    "chain:karnadi margaka:GPSO:sell:3mo": {
+      "move": null,
+      "posted_at": "2026-06-28",
+      "superseded": true
+    },
+    "chain:karnadi margaka:GPSO:sell:6mo": {
+      "move": null,
+      "posted_at": "2026-06-28",
+      "superseded": true
+    },
     "chain:madhani nusantara talatah:DEWA:sell:3mo": {
       "move": null,
       "posted_at": "2026-06-14"
@@ -109,10 +143,23 @@
       "posted_at": "2026-06-14",
       "skipped": true
     },
+    "cluster:BBCA:buy:3mo": {
+      "move": null,
+      "posted_at": "2026-06-28",
+      "skipped": true
+    },
     "cluster:CDIA:buy:3mo": {
       "move": null,
       "posted_at": "2026-06-14",
       "skipped": true
+    },
+    "cluster:GPSO:sell:3mo": {
+      "move": null,
+      "posted_at": "2026-06-28"
+    },
+    "cluster:GPSO:sell:6mo": {
+      "move": -0.6836,
+      "posted_at": "2026-06-28"
     },
     "cluster:MAPB:sell:3mo": {
       "move": null,

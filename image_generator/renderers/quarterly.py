@@ -56,16 +56,18 @@ class QuarterlyRenderer(SocialImageRenderer):
         return image
 
     def render_title_section(
-        self, 
-        data: list[dict], 
-        draw: ImageDraw.ImageDraw, 
+        self,
+        data: list[dict],
+        draw: ImageDraw.ImageDraw,
         image_width: int
     ):
-        if 'low' in data: 
+        is_low = bool(data and data[0].get("quarterly_low") is not None)
+        
+        if is_low:
             title_tag = 'Lows'
             subtitle_tag = 'lowest'
-        
-        else: 
+
+        else:
             title_tag = 'Highs'
             subtitle_tag = 'high'
 
@@ -159,12 +161,13 @@ class QuarterlyRenderer(SocialImageRenderer):
                 fill=COLORS["heading"],
             )
             
-            quarterly_low = company.get("quarterly_low") or {}
+            is_low = company.get("quarterly_low") is not None
+            quarterly_data = company.get("quarterly_low" if is_low else "quarterly_high") or {}
 
             data_rows = [
-                ("Close", format_price(quarterly_low.get("latest_close", 0)), COLORS["heading"]),
-                ("52w Low", format_price(quarterly_low.get("52w_low", 0)), COLORS["red_deep"]),
-                ("52w High", format_price(quarterly_low.get("52w_high", 0)), COLORS["green_deep"]),
+                ("Close", format_price(quarterly_data.get("latest_close", 0)), COLORS["heading"]),
+                ("52w Low", format_price(quarterly_data.get("52w_low", 0)), COLORS["red_deep"]),
+                ("52w High", format_price(quarterly_data.get("52w_high", 0)), COLORS["green_deep"]),
             ]
 
             data_y = int(card_y1 + 125 * scale)
