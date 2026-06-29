@@ -61,16 +61,16 @@
       "progress_count": 4
     },
     "chain:prijono sugiarto:ASII:buy": {
-      "completed_date": "2026-06-24",
-      "completing_filing_id": 3903,
-      "posted_at": "2026-06-24",
-      "progress_count": 4
+      "completed_date": "2026-06-26",
+      "completing_filing_id": 3927,
+      "posted_at": "2026-06-29",
+      "progress_count": 5
     },
     "cluster:ASII:buy": {
-      "completed_date": "2026-06-24",
-      "completing_filing_id": 3903,
-      "posted_at": "2026-06-24",
-      "progress_count": 6
+      "completed_date": "2026-06-29",
+      "completing_filing_id": 3950,
+      "posted_at": "2026-06-29",
+      "progress_count": 7
     },
     "cluster:BIKE:sell": {
       "completed_date": "2026-06-26",
