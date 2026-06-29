@@ -992,7 +992,7 @@ class InsiderEarningsRendererMixin:
                 self._draw_segments(draw, HX, ly, [(pre, COLORS["heading"]), (base, accent)], hf)
             else:
                 draw.text((HX, ly), ln, font=hf, fill=COLORS["heading"])
-        verb_sub = "accumulated" if direction == "buy" else "sold"
+        verb_sub = "bought" if direction == "buy" else "sold"
         subhead = f"IDR {compact(total_value)} {verb_sub} across {format_shares(total_shares)} shares"
         draw.text((HX, hy + sub_gap), ellipsize_to_width(draw, subhead, sub_fnt, max_w), font=sub_fnt, fill=COLORS["dark"])
 
@@ -1013,7 +1013,7 @@ class InsiderEarningsRendererMixin:
         self._stat_card(draw, M, sy, sw, "INSIDERS", str(cluster["holder_count"]), f"distinct {buyers}", accent)
         self._stat_card(draw, M + sw + gap, sy, sw, "COMBINED", f"IDR {compact(total_value)}", "total value", self.CLUSTER_COLORS["market"])
         self._stat_card(draw, M + 2 * (sw + gap), sy, sw, "SHARES", compact(total_shares),
-                        "shares accumulated" if direction == "buy" else "shares sold", "#F29942")
+                        "shares bought" if direction == "buy" else "shares sold", "#F29942")
         self._page_dots(draw, W, 1180, 0, 2, accent)
         paths.append(self._save(img, f"{prefix}_1.png"))
 
@@ -1367,7 +1367,7 @@ class InsiderEarningsRendererMixin:
         accent = self.CLUSTER_COLORS["buy"] if direction == "buy" else self.CLUSTER_COLORS["sell"]
         palette = self.CLUSTER_PALETTE
         verb = "bought" if direction == "buy" else "sold"
-        verb_sub = "accumulated" if direction == "buy" else "sold"
+        verb_sub = "bought" if direction == "buy" else "sold"
         fd0, fd1 = chain["first_date"], chain["last_date"]
         filing_span = self._fmt_date(fd0) if fd0 == fd1 else f"{self._fmt_date(fd0)} – {self._fmt_date(fd1)}"
         points = sorted(chain["points"], key=lambda p: (p.get("date") or "", p.get("price") or 0))
@@ -1498,7 +1498,7 @@ class InsiderEarningsRendererMixin:
         months = chain.get("months") or 1
         self._stat_card(draw, M, sy, sw, "FILINGS", str(filing_count), f"in {months} month{'s' if months != 1 else ''}", accent)
         self._stat_card(draw, M + sw + gap, sy, sw, "TOTAL", f"IDR {compact(total_value)}",
-                        "accumulated" if direction == "buy" else "sold", self.CLUSTER_COLORS["market"])
+                        "bought" if direction == "buy" else "sold", self.CLUSTER_COLORS["market"])
         self._stat_card(draw, M + 2 * (sw + gap), sy, sw, "AVG PRICE",
                         f"IDR {avg_buy:,.0f}" if avg_buy else "-", "volume-weighted", self.CLUSTER_COLORS["avg"])
         self._page_dots(draw, W, 1180, 0, 2, accent)
@@ -1577,7 +1577,7 @@ class InsiderEarningsRendererMixin:
         accent = colors["buy"] if direction == "buy" else colors["sell"]
         palette = self.CLUSTER_PALETTE
         verb = "bought" if direction == "buy" else "sold"
-        verb_sub = "accumulated" if direction == "buy" else "sold"
+        verb_sub = "bought" if direction == "buy" else "sold"
         fd0, fd1 = chain["first_date"], chain["last_date"]
         filing_span = self._fmt_date(fd0) if fd0 == fd1 else f"{self._fmt_date(fd0)} – {self._fmt_date(fd1)}"
         points = sorted(chain["points"], key=lambda p: (p.get("date") or "", p.get("price") or 0))
@@ -1723,7 +1723,7 @@ class InsiderEarningsRendererMixin:
         self._dark_stat_card(img, draw, M, sy, sw, "FILINGS", str(filing_count),
                              f"in {months} month{'s' if months != 1 else ''}", accent)
         self._dark_stat_card(img, draw, M + sw + gap, sy, sw, "TOTAL", f"IDR {compact(total_value)}",
-                             "accumulated" if direction == "buy" else "sold", colors["market"])
+                             "bought" if direction == "buy" else "sold", colors["market"])
         self._dark_stat_card(img, draw, M + 2 * (sw + gap), sy, sw, "AVG PER SHARE",
                              f"IDR {avg_buy:,.0f}" if avg_buy else "-", "from filing totals", colors["avg"])
         self._dark_page_dots(draw, W, 1180, 0, 2, accent)
@@ -1984,7 +1984,7 @@ class InsiderEarningsRendererMixin:
                 self._draw_segments(draw, HX, ly, [(pre, HEAD_COLOR), (base, accent)], hf)
             else:
                 draw.text((HX, ly), ln, font=hf, fill=HEAD_COLOR)
-        verb_sub = "accumulated" if direction == "buy" else "sold"
+        verb_sub = "bought" if direction == "buy" else "sold"
         if is_signal:
             subhead = f"IDR {compact(total_value)} {verb_sub} · {format_shares(total_shares)} shares"
         else:
@@ -2005,7 +2005,7 @@ class InsiderEarningsRendererMixin:
         self._dark_stat_card(img, draw, M, sy, sw, "INSIDERS", str(cluster["holder_count"]), f"distinct {buyers}", accent)
         self._dark_stat_card(img, draw, M + sw + gap, sy, sw, "COMBINED", f"IDR {compact(total_value)}", "total value", colors["market"])
         self._dark_stat_card(img, draw, M + 2 * (sw + gap), sy, sw, "SHARES", compact(total_shares),
-                             "shares accumulated" if direction == "buy" else "shares sold", "#F29942")
+                             "shares bought" if direction == "buy" else "shares sold", "#F29942")
         self._dark_page_dots(draw, W, 1180, 0, 2, accent)
         paths.append(self._save(img, f"{prefix}_1.png"))
 
@@ -2026,7 +2026,10 @@ class InsiderEarningsRendererMixin:
             self._dark_stat_card(img, draw, M + 2 * (sw + gap), sy2, sw, "MARKET VS FILING", f"{vs_avg:+.0f}%", vs_sub, vs_color, value_color=vs_color)
         else:
             self._dark_stat_card(img, draw, M + 2 * (sw + gap), sy2, sw, "MARKET VS FILING", "-", "", "#555566")
-        self._draw_read_more(img, draw, W, sy2 + 164 + 38, base.lower(), accent)
+        # CTA only when the roster is short (<=3 holders); a full roster (4+) would
+        # crowd the read-more line against the page dots and baked-in brand strip.
+        if len(roster) < 4:
+            self._draw_read_more(img, draw, W, 1235, base.lower(), accent)
         self._dark_page_dots(draw, W, 1180, 1, 2, accent)
         paths.append(self._save(img, f"{prefix}_2.png"))
 
@@ -2514,8 +2517,9 @@ class InsiderEarningsRendererMixin:
         self._dark_stat_card(img, draw, M + sw + gap, sy2, sw, "PERIOD", filing_span, "filing dates", "#F29942")
         self._dark_stat_card(img, draw, M + 2 * (sw + gap), sy2, sw, "TOTAL",
                              f"IDR {compact(total_value)}", "value traded", colors["market"])
-        if top_stock:
-            self._draw_read_more(img, draw, W, sy2 + 164 + 38, top_stock["base_symbol"].lower(), accent)
+        # CTA only for a short list (<=3 stocks); a full list (4+) crowds the footer.
+        if top_stock and len(shown) < 4:
+            self._draw_read_more(img, draw, W, 1235, top_stock["base_symbol"].lower(), accent)
         self._dark_page_dots(draw, W, 1180, 1, 2, accent)
         paths.append(self._save(img, f"{prefix}_2.png"))
 
@@ -2847,7 +2851,7 @@ class InsiderEarningsRendererMixin:
         modules = [("WHY 5%?", "Anyone owning 5%+ must be publicly reported", "#F29942")]
         sig_y = sy2 + 164 + 22
         card_bottom = self._dark_signal_card(draw, img, M, sig_y, W - 2 * M, modules, accent, header="GOOD TO KNOW")
-        self._draw_read_more(img, draw, W, card_bottom + 38, base.lower(), accent)
+        self._draw_read_more(img, draw, W, 1235, base.lower(), accent)
         self._dark_page_dots(draw, W, 1180, 1, 2, accent)
         paths.append(self._save(img, f"{prefix}_2.png"))
 
@@ -3090,7 +3094,7 @@ class InsiderEarningsRendererMixin:
         modules = [(module_title, quality, "#F29942")]
         sig_y = sy2 + 164 + 22
         card_bottom = self._dark_signal_card(draw, img, M, sig_y, W - 2 * M, modules, accent, header="GOOD TO KNOW")
-        self._draw_read_more(img, draw, W, card_bottom + 38, sym_slug, accent)
+        self._draw_read_more(img, draw, W, 1235, sym_slug, accent)
         self._dark_page_dots(draw, W, 1180, 1, 2, accent)
         paths.append(self._save(img, f"{prefix}_2.png"))
 

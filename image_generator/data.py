@@ -603,6 +603,24 @@ def fetch_company_report_earnings(max_rank: int = 200):
     )
 
 
+def fetch_company_report_ownership(max_rank: int = 1000):
+    """Per-symbol shareholder data for the ownership-concentration post.
+
+    Pulls the major-shareholder roster + the local/foreign composition for every
+    company, capped to recognizable names by market-cap rank. The `tags` column
+    is returned so the selector can keep only `single-entity-holding-70` names.
+    """
+    return fetch_supabase_table(
+        table_name="idx_company_report",
+        columns=(
+            "symbol, company_name, sector, sub_sector, market_cap, market_cap_rank, "
+            "last_close_price, tags, major_shareholders, shareholders_composition"
+        ),
+        query_modifier=lambda query: query.lte("market_cap_rank", max_rank)
+        .order("market_cap_rank", desc=False),
+    )
+
+
 def fetch_ihsg_weekly_data():
     ihsg_df = fetch_supabase_table(
         table_name="index_daily_data",

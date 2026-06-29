@@ -336,3 +336,98 @@ def record_earnings(state, spike, run_date):
         "latest_quarter": spike.get("latest_quarter"),
         "posted_at": str(_parse_date(run_date) or run_date),
     }
+
+
+# --------------------------------------------------------------------------- #
+# OWNERSHIP feed (standalone). Ownership concentration is a large, near-STATIC
+# backlog (~226 single-entity-holding-70 names), not an event stream — so this is
+# a rotation queue, not a freshness gate: each run posts the next unposted name
+# (most recognizable first, i.e. the caller orders by market cap). A name re-fires
+# ONLY if its controller's stake moved materially (>= OWNERSHIP_CHANGE_GATE) — a
+# real ownership shift worth re-telling. Dedup keyed by bare symbol.
+#
+# The multi-ticker leaderboard ("board") is an aggregate snapshot, deduped by
+# calendar month so it posts once per month regardless of how often the run fires.
+# --------------------------------------------------------------------------- #
+OWNERSHIP_STATE_PATH = Path("state/posted_ownership.json")
+OWNERSHIP_BOARD_STATE_PATH = Path("state/posted_ownership_board.json")
+OWNERSHIP_CHANGE_GATE = 0.03   # 3 percentage points
+
+
+def _bare_symbol(symbol):
+    return str(symbol).upper().split(".")[0]
+
+
+def load_ownership_state(path=OWNERSHIP_STATE_PATH):
+    path = Path(path)
+    if path.exists():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            data.setdefault("owners", {})
+            return data
+        except (ValueError, OSError):
+            pass
+    return {"owners": {}}
+
+
+def save_ownership_state(state, path=OWNERSHIP_STATE_PATH):
+    save_state(state, path)
+
+
+def select_ownership_fires(posts, state, change_gate=OWNERSHIP_CHANGE_GATE):
+    """Unposted names (or ones whose controller stake moved >= change_gate).
+
+    `posts` is taken in the order given (caller sorts by market-cap rank so the
+    most recognizable names lead). Caller applies the per-run limit.
+    """
+    posted = state.get("owners", {})
+    fires = []
+    for p in posts:
+        sym = _bare_symbol(p["symbol"])
+        pct = p["controller"]["pct"] or 0
+        prev = posted.get(sym)
+        if prev is None:
+            fires.append(p)
+        elif abs(pct - (prev.get("controller_pct") or 0)) >= change_gate:
+            fires.append(p)
+    return fires
+
+
+def record_ownership(state, post, run_date):
+    state.setdefault("owners", {})[_bare_symbol(post["symbol"])] = {
+        "controller_pct": post["controller"]["pct"] or 0,
+        "controller_name": post["controller"].get("name"),
+        "posted_at": str(_parse_date(run_date) or run_date),
+    }
+
+
+def load_ownership_board_state(path=OWNERSHIP_BOARD_STATE_PATH):
+    path = Path(path)
+    if path.exists():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            data.setdefault("boards", {})
+            return data
+        except (ValueError, OSError):
+            pass
+    return {"boards": {}}
+
+
+def save_ownership_board_state(state, path=OWNERSHIP_BOARD_STATE_PATH):
+    save_state(state, path)
+
+
+def board_period_key(run_date):
+    d = _parse_date(run_date) or datetime.now().date()
+    return f"{d.year:04d}-{d.month:02d}"
+
+
+def board_already_posted(state, key):
+    return key in state.get("boards", {})
+
+
+def record_board(state, key, symbols, run_date):
+    state.setdefault("boards", {})[key] = {
+        "posted_at": str(_parse_date(run_date) or run_date),
+        "symbols": symbols,
+    }

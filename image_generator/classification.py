@@ -331,3 +331,119 @@ def prepare_data_upcoming_dividend(
         })
 
     return enriched_reports
+
+
+# ---------------------------------------------------------------------------
+# Ownership concentration (single-entity-holding-70 tag)
+# ---------------------------------------------------------------------------
+
+OWNERSHIP_TAG = "single-entity-holding-70"
+
+
+def _coerce_obj(value):
+    """idx_company_report nested JSON fields arrive as native list/dict (or a
+    JSON string when loaded from a flat file). Return the parsed object."""
+    if value is None:
+        return None
+    if isinstance(value, (list, dict)):
+        return value
+    if pd.isna(value) if not isinstance(value, (list, dict)) else False:
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        for parser in (json.loads, ast.literal_eval):
+            try:
+                return parser(text)
+            except Exception:
+                pass
+    return None
+
+
+def _to_float(value):
+    try:
+        if value is None or (isinstance(value, float) and pd.isna(value)):
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def select_ownership_posts(df, limit=None, min_controller=0.5):
+    """Turn `single-entity-holding-70` rows into ownership-post payloads.
+
+    Each payload carries the dominant controller, the public float, the named
+    holder roster, and the local/foreign split — everything the renderer needs
+    to draw the "one owner controls X%" story. Sorted by market-cap rank so the
+    most recognizable names lead.
+    """
+    if df is None or len(df) == 0:
+        return []
+
+    posts = []
+    for _, row in df.iterrows():
+        tags = parse_tags(row.get("tags"))
+        if OWNERSHIP_TAG not in tags:
+            continue
+
+        shareholders = _coerce_obj(row.get("major_shareholders")) or []
+        if not isinstance(shareholders, list) or not shareholders:
+            continue
+
+        holders, public_pct = [], 0.0
+        for h in shareholders:
+            if not isinstance(h, dict):
+                continue
+            name = str(h.get("name", "")).strip()
+            pct = _to_float(h.get("share_percentage"))
+            if pct is None:
+                continue
+            if name.lower() == "public":
+                public_pct += pct
+                continue
+            holders.append({
+                "name": name,
+                "pct": pct,
+                "value": _to_float(h.get("share_value")),
+                "shares": _to_float(h.get("share_amount")),
+            })
+
+        if not holders:
+            continue
+        holders.sort(key=lambda x: x["pct"], reverse=True)
+        controller = holders[0]
+        if (controller["pct"] or 0) < min_controller:
+            continue
+
+        others_pct = sum(h["pct"] for h in holders[1:])
+
+        # Latest local/foreign composition (share counts) for slide-2 context.
+        comp = _coerce_obj(row.get("shareholders_composition")) or []
+        foreign_pct, n_shareholders = None, None
+        if isinstance(comp, list) and comp:
+            latest = comp[-1] if isinstance(comp[-1], dict) else {}
+            tl = _to_float(latest.get("total_l")) or 0.0
+            tf = _to_float(latest.get("total_f")) or 0.0
+            if (tl + tf) > 0:
+                foreign_pct = tf / (tl + tf)
+            n_shareholders = latest.get("numbers_of_shareholders")
+
+        posts.append({
+            "symbol": row.get("symbol"),
+            "company_name": row.get("company_name"),
+            "sector": row.get("sub_sector") or row.get("sector"),
+            "market_cap": _to_float(row.get("market_cap")),
+            "market_cap_rank": row.get("market_cap_rank"),
+            "controller": controller,
+            "others_pct": others_pct,
+            "public_pct": public_pct,
+            "holders": holders,
+            "foreign_pct": foreign_pct,
+            "n_shareholders": n_shareholders,
+        })
+
+    posts.sort(key=lambda p: (p.get("market_cap_rank") or 9999))
+    if limit:
+        posts = posts[:limit]
+    return posts

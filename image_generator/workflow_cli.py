@@ -9,15 +9,18 @@ from .renderers.dividend import DividendRenderer
 from .renderers.volume_spike import VolumeSpikeRenderer
 from .renderers.anomalies_changes import AnomalyChangesRenderer
 from .renderers.foreign_flow import ForeignFlowRenderer
+from .renderers.ownership import OwnershipRenderer
+from .renderers.ownership_board import OwnershipBoardRenderer
 from .renderers.winners_losers import WinnersLosersRenderer
 from .renderers.sector_heatmap import SectorHeatmapRenderer
 from .renderers.lq45_ytd import LQ45YTDRenderer
 from .renderers.insider_roundup import InsiderRoundupRenderer
 from .utils.slack import upload_posts_to_slack
 from .classification import (
-    prepare_data_by_mcap, 
-    select_quarterly_data, 
-    prepare_data_upcoming_dividend
+    prepare_data_by_mcap,
+    select_quarterly_data,
+    prepare_data_upcoming_dividend,
+    select_ownership_posts,
 )
 from .data import (
     fetch_company_report,
@@ -30,12 +33,24 @@ from .data import (
     fetch_volume_spike_data,
     fetch_anomaly_data,
     fetch_foreign_flow_data,
+    fetch_company_report_ownership,
     fetch_weekly_movers_data,
     fetch_weekly_sector_data,
     fetch_lq45_ytd_data,
     fetch_weekly_insider_aggregates,
 )
 from .utils.io_helper import load_dividend_state, save_dividend_state
+from .triggers import (
+    load_ownership_state,
+    save_ownership_state,
+    select_ownership_fires,
+    record_ownership,
+    load_ownership_board_state,
+    save_ownership_board_state,
+    board_period_key,
+    board_already_posted,
+    record_board,
+)
 
 import typer
 
@@ -308,6 +323,91 @@ def foreign_flow(
         ]
         upload_posts_to_slack(posts, slack_channel=slack_channel)
 
+@app.command("ownership")
+def ownership(
+    output: Path = typer.Option(Path("output"), "--output", "-o"),
+    slack_channel: str | None = typer.Option(None, "--slack-channel"),
+    limit: int = typer.Option(1, "--limit", help="Max ownership carousels to post this run."),
+):
+    renderer = OwnershipRenderer(output_dir=output)
+
+    df = fetch_company_report_ownership()
+    posts = select_ownership_posts(df)   # sorted by market-cap rank (recognizable first)
+    if not posts:
+        typer.echo("Skipping ownership: no single-entity-holding-70 names")
+        raise typer.Exit(code=0)
+
+    state = load_ownership_state()
+    fires = select_ownership_fires(posts, state)[:limit]
+    if not fires:
+        typer.echo("Skipping ownership: nothing new to post (all posted, none changed)")
+        raise typer.Exit(code=0)
+
+    typer.echo(f"Rendering {len(fires)} ownership carousel(s)...")
+    all_paths = []
+    slide_owner = {}
+    for post in fires:
+        slides = renderer.render(post)
+        base = str(post["symbol"]).upper().split(".")[0]
+        caption = (
+            f"Who really owns {base}?\n\n#IDX #StockMarket #Indonesia #Ownership #SectorsApp"
+        )
+        for path in slides:
+            typer.echo(path.resolve())
+            all_paths.append((path, caption))
+            slide_owner[path] = post
+
+    if slack_channel:
+        uploaded = upload_posts_to_slack(all_paths, slack_channel=slack_channel)
+
+        # Only burn state for names whose slides actually went out.
+        posted, seen = [], set()
+        for path, _ in uploaded:
+            post = slide_owner.get(path)
+            if post is not None and id(post) not in seen:
+                seen.add(id(post))
+                posted.append(post)
+        for post in posted:
+            record_ownership(state, post, date.today())
+        if posted:
+            save_ownership_state(state)
+
+
+@app.command("ownership-board")
+def ownership_board(
+    output: Path = typer.Option(Path("output"), "--output", "-o"),
+    slack_channel: str | None = typer.Option(None, "--slack-channel"),
+    top_n: int = typer.Option(10, "--top-n", help="How many companies on the leaderboard."),
+):
+    renderer = OwnershipBoardRenderer(output_dir=output)
+
+    state = load_ownership_board_state()
+    key = board_period_key(date.today())
+    if board_already_posted(state, key):
+        typer.echo(f"Skipping ownership-board: already posted for {key}")
+        raise typer.Exit(code=0)
+
+    df = fetch_company_report_ownership()
+    posts = select_ownership_posts(df)
+    if not posts:
+        typer.echo("Skipping ownership-board: no single-entity-holding-70 names")
+        raise typer.Exit(code=0)
+
+    paths = renderer.render(posts, top_n=top_n)
+    for path in paths:
+        typer.echo(path.resolve())
+
+    if slack_channel:
+        caption = (
+            "Indonesian companies almost entirely owned by one shareholder\n\n"
+            "#IDX #StockMarket #Indonesia #Ownership #SectorsApp"
+        )
+        uploaded = upload_posts_to_slack([(p, caption) for p in paths], slack_channel=slack_channel)
+        if uploaded:
+            board = sorted(posts[:top_n], key=lambda p: p["controller"]["pct"] or 0, reverse=True)
+            symbols = [str(p["symbol"]).upper().split(".")[0] for p in board]
+            record_board(state, key, symbols, date.today())
+            save_ownership_board_state(state)
 @app.command("weekly-movers")
 def weekly_movers(
     output: Path = typer.Option(Path("output"), "--output", "-o"),

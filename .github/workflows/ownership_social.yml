@@ -1,0 +1,81 @@
+name: Generate and Post Ownership Concentration
+
+# Standalone feed — per-company "who owns it" carousel for single-entity-holding-70
+# names (one shareholder controls 70%+). This is a large, near-STATIC backlog
+# (~226 names), so the trigger is a ROTATION QUEUE, not a freshness gate: each run
+# posts the next unposted name ordered by market cap (most recognizable first). A
+# name re-fires only if its controller's stake moved >= 3 percentage points.
+#
+# Dedup is CLI-side via state/posted_ownership.json (keyed on bare symbol). The
+# "Persist post state" step commits it back so the next run skips what already
+# posted. Set the schedule in cron-job.org (calls workflow_dispatch); ~1-2x/week
+# at 1 post/run keeps the backlog running for ~2 years.
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Slack channel/DM ID (default = #visuals)'
+        required: false
+        default: 'C04RC79U5NK'
+      limit:
+        description: 'Max carousels to post this run'
+        required: false
+        default: '1'
+
+jobs:
+  generate_and_post:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # push the updated dedup state back to the repo
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libharfbuzz-dev libfribidi-dev
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Ownership Generator
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        run: |
+          python -m image_generator.workflow_cli ownership \
+            --slack-channel "${{ github.event.inputs.channel || 'C04RC79U5NK' }}" \
+            --limit "${{ github.event.inputs.limit || '1' }}"
+
+      - name: Upload generated PNGs as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ownership-cards
+          path: output/ownership_*.png
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Persist post state
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add state/posted_ownership.json
+          git commit -m "chore: update ownership post state [skip ci]" || { echo "no state change"; exit 0; }
+          for i in 1 2 3 4 5; do
+            git push && { echo "pushed on attempt $i"; exit 0; }
+            echo "push rejected (attempt $i), rebasing onto latest main..."
+            git pull --rebase --autostash origin main || true
+          done
+          echo "::error::failed to persist state after 5 attempts"
+          exit 1
