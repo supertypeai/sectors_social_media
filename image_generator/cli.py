@@ -127,7 +127,7 @@ def _insider_caption(p, feed):
         verb = "bought" if direction == "buy" else "sold"
         title = f":link: *{holder} {verb} {sym} repeatedly*"
     else:  # cluster
-        word = "accumulation" if direction == "buy" else "distribution"
+        word = "buy" if direction == "buy" else "sell"
         title = f":busts_in_silhouette: *Insider {word} cluster — {sym}*"
     feedtag = "#InsiderStory" if feed == "story" else "#InsiderSignal"
     return f"{title}\n\n{_TAGS} {feedtag} #SectorsApp"
