@@ -1383,25 +1383,24 @@ def fetch_macro_news(th_score: int = 80):
         "Inflation",
         "Interest Rate",
         "Global Economy",
-        "Government Policy",
         "Tariff & VAT",
+        # "Government Policy"
     ]
 
     tags_array = "{" + ",".join(macro_tags) + "}"
 
-    seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
+    today_start = datetime.now(timezone.utc).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
 
     records = fetch_supabase_table(
         table_name="idx_news",
-        order_column="timestamp",
-        order_desc=True,
-        since_column="timestamp",
-        since_value=seven_days_ago,
         query_modifier=lambda query: (
             query
             .filter("tags", "ov", tags_array)
             .filter("tickers", "eq", "{}")
             .filter("score", "gt", th_score)
+            .gte("timestamp", today_start.isoformat())
         ),
     ).to_dict(orient="records")
 

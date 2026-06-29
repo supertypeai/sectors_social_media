@@ -439,7 +439,7 @@ def macro_news(
         render_scale=render_scale,
     )
 
-    records = fetch_macro_news(th_score=85)
+    records = fetch_macro_news(th_score=70)
 
     if not records: 
         typer.echo("Skipping macro-news: no records found")
