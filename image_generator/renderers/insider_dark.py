@@ -262,6 +262,21 @@ class InsiderEarningsRendererMixin:
         draw.text((cta_x, y + 2), label, font=label_fnt, fill="#9090a8")
         draw.text((cta_x + label_w, y), link, font=link_fnt, fill=accent)
 
+    # The CTA sits ABOVE the carousel dots (dots are pinned at y=1180) with a
+    # comfortable gap below it (~36px to the dots). It's drawn ONLY when the
+    # slide's content clears it; on a tall slide (e.g. a full 4+ roster) it would
+    # collide, so we drop it entirely rather than cram it into the footer.
+    CTA_ABOVE_DOTS_Y = 1112
+
+    def _maybe_read_more(self, img, draw, W, content_bottom, sym_slug, accent, cta_y=None, gap=18):
+        """Draw the read-more CTA just above the page dots — but only if there is a
+        clear gap below `content_bottom`. Returns True if drawn, False if dropped."""
+        cta_y = self.CTA_ABOVE_DOTS_Y if cta_y is None else cta_y
+        if not sym_slug or content_bottom + gap > cta_y:
+            return False
+        self._draw_read_more(img, draw, W, cta_y, sym_slug, accent)
+        return True
+
     def _cluster_convergence_chart(self, close_by_date, points, roster, palette, figsize=(11, 3.3),
                                    avg_buy=None, dots_color=None, dots_label=None, show_legend=False,
                                    ylabel=None, face="#ffffff", label_color="#666",
@@ -1773,8 +1788,9 @@ class InsiderEarningsRendererMixin:
         if size_anom:
             modules.append(("SIZE", f"{size_anom['mult']:.1f}× typical {direction} (IDR {size_anom['at']})", "#F29942"))
         sig_y = sy2 + 164 + 22
-        self._dark_signal_card(draw, img, M, sig_y, W - 2 * M, modules[:2], accent)
+        card_bottom = self._dark_signal_card(draw, img, M, sig_y, W - 2 * M, modules[:2], accent)
 
+        self._maybe_read_more(img, draw, W, card_bottom, base.lower(), accent)
         self._dark_page_dots(draw, W, 1180, 1, 2, accent)
         paths.append(self._save(img, f"{prefix}_2.png"))
 
@@ -2028,8 +2044,7 @@ class InsiderEarningsRendererMixin:
             self._dark_stat_card(img, draw, M + 2 * (sw + gap), sy2, sw, "MARKET VS FILING", "-", "", "#555566")
         # CTA only when the roster is short (<=3 holders); a full roster (4+) would
         # crowd the read-more line against the page dots and baked-in brand strip.
-        if len(roster) < 4:
-            self._draw_read_more(img, draw, W, 1235, base.lower(), accent)
+        self._maybe_read_more(img, draw, W, sy2 + 164, base.lower(), accent)
         self._dark_page_dots(draw, W, 1180, 1, 2, accent)
         paths.append(self._save(img, f"{prefix}_2.png"))
 
@@ -2518,8 +2533,8 @@ class InsiderEarningsRendererMixin:
         self._dark_stat_card(img, draw, M + 2 * (sw + gap), sy2, sw, "TOTAL",
                              f"IDR {compact(total_value)}", "value traded", colors["market"])
         # CTA only for a short list (<=3 stocks); a full list (4+) crowds the footer.
-        if top_stock and len(shown) < 4:
-            self._draw_read_more(img, draw, W, 1235, top_stock["base_symbol"].lower(), accent)
+        self._maybe_read_more(img, draw, W, sy2 + 164,
+                              top_stock["base_symbol"].lower() if top_stock else None, accent)
         self._dark_page_dots(draw, W, 1180, 1, 2, accent)
         paths.append(self._save(img, f"{prefix}_2.png"))
 
@@ -2851,7 +2866,7 @@ class InsiderEarningsRendererMixin:
         modules = [("WHY 5%?", "Anyone owning 5%+ must be publicly reported", "#F29942")]
         sig_y = sy2 + 164 + 22
         card_bottom = self._dark_signal_card(draw, img, M, sig_y, W - 2 * M, modules, accent, header="GOOD TO KNOW")
-        self._draw_read_more(img, draw, W, 1235, base.lower(), accent)
+        self._maybe_read_more(img, draw, W, card_bottom, base.lower(), accent)
         self._dark_page_dots(draw, W, 1180, 1, 2, accent)
         paths.append(self._save(img, f"{prefix}_2.png"))
 
@@ -3094,7 +3109,7 @@ class InsiderEarningsRendererMixin:
         modules = [(module_title, quality, "#F29942")]
         sig_y = sy2 + 164 + 22
         card_bottom = self._dark_signal_card(draw, img, M, sig_y, W - 2 * M, modules, accent, header="GOOD TO KNOW")
-        self._draw_read_more(img, draw, W, 1235, sym_slug, accent)
+        self._maybe_read_more(img, draw, W, card_bottom, sym_slug, accent)
         self._dark_page_dots(draw, W, 1180, 1, 2, accent)
         paths.append(self._save(img, f"{prefix}_2.png"))
 
