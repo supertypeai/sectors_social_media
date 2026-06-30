@@ -429,7 +429,7 @@ def macro_news(
     render_scale: float = typer.Option(1.0, "--render-scale"),
 ):
     today = datetime.now()
-    period_label = f"{today.strftime("%Y-%m-%d")}"
+    period_label = f"{today.strftime('%Y-%m-%d')}"
 
     summarizer = NewsSummarizer()
     renderer = MacroNewsRenderer(
