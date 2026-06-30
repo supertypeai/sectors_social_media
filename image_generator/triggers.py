@@ -28,6 +28,9 @@ from pathlib import Path
 SIGNAL_FRESHNESS_DAYS = 7          # a "fresh" completion: last filing within a week of the run
 STORY_HORIZONS = (3, 6, 9)         # months after the last filing to look back from
 STORY_MOVE_GATE = 0.15             # |move| must clear 15% for the story to be worth telling
+
+# Master switch for the STORY (hindsight) feed. Paused 2026-06-30
+STORY_FEED_ENABLED = False
 # NOTE: bad-data filtering (netted mixed-leg / rights-issue filings, e.g. CYBR)
 # is deferred. The proper fix is a mixed-buy+sell-leg detector applied to BOTH
 # feeds — see idx-filings-data-quirks. A blunt filing_px/market ratio gate was
@@ -148,6 +151,8 @@ def select_story_fires(patterns, run_date, state, price_fetcher, gate=STORY_MOVE
     told afterward (record_story), so weaker/under-gate duplicates never resurface
     (the move to a fixed past checkpoint can't change).
     """
+    if not STORY_FEED_ENABLED:
+        return []  # story feed paused — see STORY_FEED_ENABLED
     run = _parse_date(run_date) or datetime.now().date()
     told = state.get("stories", {})
     fires = []
