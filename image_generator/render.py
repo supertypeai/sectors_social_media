@@ -672,21 +672,44 @@ class SocialImageRenderer(InsiderEarningsRendererMixin):
             self._trend_arrow(draw, (chip_x + pad, chip_y + (chip_h - arrow_size) // 2), up=is_buy, size=arrow_size, fill=accent_color, weight=3)
             draw.text((chip_x + pad + arrow_size + gap, chip_y + 8), status_text, font=chip_fnt, fill=accent_color)
             
-            # Holder Name (SemiBold, diperkecil 3 -> 25)
-            curr_y += 55
-            holder = row.get("holder_name") or "Individual/Institution"
-            draw.text((inner_x, curr_y), holder, font=font("Inter-SemiBold.ttf", 25), fill=COLORS["soft_ink"])
-
-            # Value (Top Right, SemiBold, diperkecil 2: 32 -> 30, format suffix + titik ribuan)
+            # Value (Top Right, SemiBold, format suffix + titik ribuan). Compute
+            # widths first so the holder name can be fit to the space left of it.
             val_label = "Transaction Value"
+            val_label_fnt = font("Inter-Regular.ttf", 22)
+            val_fnt = font("Inter-SemiBold.ttf", 30)
             raw_val = row.get("transaction_value", 0)
             val_text = currency_idr(raw_val)
-                
-            draw.text((w - margin - 40 - draw.textlength(val_label, font=font("Inter-Regular.ttf", 22)), y + 35), val_label, font=font("Inter-Regular.ttf", 22), fill=COLORS["muted"])
-            draw.text((w - margin - 40 - draw.textlength(val_text, font=font("Inter-SemiBold.ttf", 30)), y + 65), val_text, font=font("Inter-SemiBold.ttf", 30), fill=COLORS["ink"])
+            val_block_left = (w - margin - 40) - max(
+                draw.textlength(val_label, font=val_label_fnt),
+                draw.textlength(val_text, font=val_fnt),
+            )
 
-            # Divider (posisi disesuaikan dengan card_h baru)
-            divider_y = y + 138
+            # Holder Name (SemiBold) — wrap to up to 2 lines (shrinking the font a
+            # little if needed) so long institutional names (e.g. JPMorgan's full
+            # legal name) show in full instead of being clipped, while staying
+            # clear of the Transaction Value block on the right.
+            curr_y += 55
+            holder = row.get("holder_name") or "Individual/Institution"
+            name_max_w = max(160, int(val_block_left - inner_x - 28))
+            holder_size = 25
+            holder_fnt = font("Inter-SemiBold.ttf", holder_size)
+            name_lines = wrap_text(draw, holder, holder_fnt, name_max_w)
+            while holder_size > 19 and len(name_lines) > 2:
+                holder_size -= 1
+                holder_fnt = font("Inter-SemiBold.ttf", holder_size)
+                name_lines = wrap_text(draw, holder, holder_fnt, name_max_w)
+            name_line_h = holder_size + 7
+            name_lines = name_lines[:2]
+            for li, line in enumerate(name_lines):
+                draw.text((inner_x, curr_y + li * name_line_h), line, font=holder_fnt, fill=COLORS["soft_ink"])
+            name_block_bottom = curr_y + len(name_lines) * name_line_h
+
+            draw.text((w - margin - 40 - draw.textlength(val_label, font=val_label_fnt), y + 35), val_label, font=val_label_fnt, fill=COLORS["muted"])
+            draw.text((w - margin - 40 - draw.textlength(val_text, font=val_fnt), y + 65), val_text, font=val_fnt, fill=COLORS["ink"])
+
+            # Divider — sits below the name block, so it drops down on cards whose
+            # name wrapped to 2 lines (single-line cards keep the original y+138).
+            divider_y = max(y + 138, int(name_block_bottom + 14))
             draw.line((inner_x, divider_y, w - margin - 40, divider_y), fill="#acacac", width=1)
             
             # Metadata Row (Medium, font diperkecil 4: 28 -> 24)
