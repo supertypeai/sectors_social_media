@@ -335,7 +335,13 @@ def group_insider_clusters(df, min_holders=3, window_months=6):
         from datetime import datetime as _dt
 
         roster = {k: {"shares": 0.0, "value": 0.0, "filings": 0, "first": None,
-                      "last": None, "ownership_after": None, "wdate": 0.0} for k in holder_keys}
+                      "last": None, "ownership_after": None} for k in holder_keys}
+        # One dot per (insider, real filing date): same-day filings collapse to a
+        # single VWAP dot (legit — they're lot-splits of one event), while filings
+        # on different dates each keep their own dot. Every dot lands on a real date
+        # and real price, so the chart shows true cadence (replaces the old
+        # share-weighted single-dot-per-insider collapse).
+        by_key_date = defaultdict(lambda: {"shares": 0.0, "value": 0.0})
         filing_count = 0
         all_dates = []
         for r in in_win:
@@ -354,26 +360,16 @@ def group_insider_clusters(df, min_holders=3, window_months=6):
             agg["value"] += value
             agg["first"] = date if agg["first"] is None else min(agg["first"], date)
             agg["last"] = date if agg["last"] is None else max(agg["last"], date)
-            try:
-                agg["wdate"] += _dt.strptime(date, "%Y-%m-%d").toordinal() * shares
-            except ValueError:
-                pass
+            g = by_key_date[(r["_hkey"], date)]
+            g["shares"] += shares
+            g["value"] += value
 
-        # ONE weighted-average dot per insider (not per filing): collapse each
-        # insider's in-window filings to a single point at their share-weighted
-        # average price and date. This keeps the chart's dot count equal to the
-        # roster table's row count (Evelyn: "3 in tabular but a bunch in the graph"
-        # — show the weighted average instead of every transaction).
         points = []
-        for k, v in roster.items():
-            if v["shares"] <= 0 or v["value"] <= 0:
+        for (k, date), g in by_key_date.items():
+            if g["shares"] <= 0 or g["value"] <= 0:
                 continue
-            avg_price = v["value"] / v["shares"]
-            try:
-                wdate = _dt.fromordinal(int(round(v["wdate"] / v["shares"]))).strftime("%Y-%m-%d")
-            except (ValueError, ZeroDivisionError, OverflowError):
-                wdate = v["last"]
-            points.append({"date": wdate, "price": avg_price, "shares": v["shares"], "hkey": k})
+            points.append({"date": date, "price": g["value"] / g["shares"],
+                           "shares": g["shares"], "hkey": k})
 
         roster_list = sorted(
             (
