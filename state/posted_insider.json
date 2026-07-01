@@ -13,10 +13,10 @@
       "progress_count": 6
     },
     "chain:buana graha utama:MICE:buy": {
-      "completed_date": "2026-06-18",
-      "completing_filing_id": 3870,
-      "posted_at": "2026-06-23",
-      "progress_count": 11
+      "completed_date": "2026-07-01",
+      "completing_filing_id": 3975,
+      "posted_at": "2026-07-01",
+      "progress_count": 12
     },
     "chain:dannacher patrick rudolf:CYBR:buy": {
       "completed_date": "2026-06-15",
@@ -88,6 +88,12 @@
       "completed_date": "2026-06-11",
       "completing_filing_id": 3817,
       "posted_at": "2026-06-11",
+      "progress_count": 3
+    },
+    "cluster:MICE:buy": {
+      "completed_date": "2026-07-01",
+      "completing_filing_id": 3977,
+      "posted_at": "2026-07-01",
       "progress_count": 3
     },
     "cluster:SMDR:buy": {
