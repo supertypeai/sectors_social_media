@@ -520,7 +520,7 @@ class SocialImageRenderer(InsiderEarningsRendererMixin):
                     pass
 
             if not logo_img:
-                url = f"https://storage.googleapis.com/sectorsapp/logo/{symbol}.{ext}"
+                url = f"https://storage.googleapis.com/sectorsapp-sea/logo/{symbol}.{ext}"
                 try:
                     resp = requests.get(url, timeout=4)
                     

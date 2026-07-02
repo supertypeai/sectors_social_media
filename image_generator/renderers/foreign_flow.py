@@ -33,7 +33,7 @@ class ForeignFlowRenderer(SocialImageRenderer):
         if img is None:
             try:
                 resp = requests.get(
-                    f"https://storage.googleapis.com/sectorsapp/logo/{symbol}.webp", timeout=4
+                    f"https://storage.googleapis.com/sectorsapp-sea/logo/{symbol}.webp", timeout=4
                 )
                 if resp.status_code == 200:
                     img = Image.open(io.BytesIO(resp.content)).convert("RGBA")

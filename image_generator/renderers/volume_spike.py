@@ -125,7 +125,7 @@ class VolumeSpikeRenderer(SocialImageRenderer):
             if logo_path.exists():
                 img = Image.open(logo_path).convert('RGBA')
             else:
-                url = f'https://storage.googleapis.com/sectorsapp/logo/{clean}.webp'
+                url = f'https://storage.googleapis.com/sectorsapp-sea/logo/{clean}.webp'
                 resp = requests.get(url, timeout=5)
                 resp.raise_for_status()
                 img = Image.open(BytesIO(resp.content)).convert('RGBA')
