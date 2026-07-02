@@ -23,6 +23,11 @@ on:
         required: false
         default: 'C04RC79U5NK'
 
+      day:
+        description: 'Lookback days (stock-performance mode only: 7 = weekly, 30 = monthly)'
+        required: false
+        default: '7'
+
 jobs:
   generate_and_post:
     runs-on: ubuntu-latest
@@ -50,6 +55,7 @@ jobs:
         run: |
           echo "mode=${{ github.event.inputs.mode }}" >> "$GITHUB_OUTPUT"
           echo "channel=${{ github.event.inputs.channel || 'C04RC79U5NK' }}" >> "$GITHUB_OUTPUT"
+          echo "day=${{ github.event.inputs.day || '7' }}" >> "$GITHUB_OUTPUT"
 
       - name: Run Workflow Social Image Generator
         env:
@@ -60,6 +66,12 @@ jobs:
           GEMINI_API_KEY2: ${{ secrets.GEMINI_API_KEY2 }}
           GEMINI_API_KEY3: ${{ secrets.GEMINI_API_KEY3 }}
         run: |
-          echo "Running mode=${{ steps.resolve_mode.outputs.mode }} channel=${{ steps.resolve_mode.outputs.channel }}"
-          python -m image_generator.workflow_cli "${{ steps.resolve_mode.outputs.mode }}" \
-            --slack-channel "${{ steps.resolve_mode.outputs.channel }}"
+          echo "Running mode=${{ steps.resolve_mode.outputs.mode }} channel=${{ steps.resolve_mode.outputs.channel }} day=${{ steps.resolve_mode.outputs.day }}"
+          if [ "${{ steps.resolve_mode.outputs.mode }}" = "stock-performance" ]; then
+            python -m image_generator.workflow_cli "${{ steps.resolve_mode.outputs.mode }}" \
+              --slack-channel "${{ steps.resolve_mode.outputs.channel }}" \
+              --day "${{ steps.resolve_mode.outputs.day }}"
+          else
+            python -m image_generator.workflow_cli "${{ steps.resolve_mode.outputs.mode }}" \
+              --slack-channel "${{ steps.resolve_mode.outputs.channel }}"
+          fi

@@ -282,30 +282,34 @@ class StockPerformanceRenderer(SocialImageRenderer):
         x = self._outer_margin
 
         eyebrow = f"{day}-day return"
+
         if period_label:
             eyebrow = f"{eyebrow} · {period_label}"
-        draw.text((x, self._spec(88)), eyebrow, font=self._font("Bold", 24), fill=accent)
+        
+        draw.text((x, self._spec(118)), eyebrow, font=self._font("Bold", 24), fill=accent)
 
         title = "index drivers" if direction == "gainers" else "biggest drops"
         title_font = self._fit_font(draw, title.upper(), "Bold", 62, 42, self._width - x * 2)
-        draw.text((x, self._spec(150)), title.upper(), font=title_font, fill=self.COLORS["white"])
+        draw.text((x, self._spec(180)), title.upper(), font=title_font, fill=self.COLORS["white"])
 
         index_title = index_name.upper()
         index_font = self._fit_font(draw, index_title, "Bold", 82, 50, self._width - x * 2)
-        draw.text((x, self._spec(218)), index_title, font=index_font, fill=accent)
+        draw.text((x, self._spec(248)), index_title, font=index_font, fill=accent)
 
-        subhead = (
-            f"Top {self._per_side} · {day}d return"
-            if direction == "gainers"
-            else f"Bottom {self._per_side} · {day}d return"
-        )
-        draw.text((x, self._spec(344)), subhead, font=self._font("SemiBold", 27), fill=self.COLORS["soft"])
+        # subhead = (
+        #     f"Top {self._per_side} · {day}d return"
+        #     if direction == "gainers"
+        #     else f"Bottom {self._per_side} · {day}d return"
+        # )
+
+        # draw.text((x, self._spec(344)), subhead, font=self._font("SemiBold", 27), fill=self.COLORS["soft"])
 
         if index_performance is not None:
             index_color = self.COLORS["lime"] if index_performance >= 0 else self.COLORS["ember"]
             arrow = "up" if index_performance >= 0 else "down"
+            
             self._draw_pill(
-                canvas, x, self._spec(408),
+                canvas, x, self._spec(385),
                 f"INDEX  {index_performance:+.1f}%",
                 border=index_color,
                 arrow=arrow,
@@ -334,6 +338,7 @@ class StockPerformanceRenderer(SocialImageRenderer):
         for idx, record in enumerate(records):
             row = idx // cols
             col = idx % cols
+            
             center = (
                 round(grid_left + col_gap * col),
                 round(grid_top + row_gap * row),
@@ -351,19 +356,23 @@ class StockPerformanceRenderer(SocialImageRenderer):
             value = float(record.get(return_key, 0) or 0)
             pct_text = f"{value:+.1f}%"
             pct_font_fit = self._fit_font(draw, pct_text, "Bold", pct_font.size / self._scale, 30, self._spec(230))
+            
             self._draw_centered_text(
                 draw, center[0], ticker_y + self._spec(32 if cols >= 5 else 38),
                 pct_text, pct_font_fit, self._return_color(value),
             )
 
             close_text = self._format_close_price(record.get("latest_close"))
+            
             if close_text:
                 close_y = ticker_y + self._spec(78 if cols >= 5 else 90)
+                
                 close_font_fit = self._fit_font(
                     draw, close_text, "SemiBold",
                     close_font.size / self._scale, 14,
                     self._spec(210 if cols >= 5 else 260),
                 )
+
                 self._draw_centered_text(draw, center[0], close_y, close_text, close_font_fit, self.COLORS["soft"])
 
     def _draw_summary_strip(
