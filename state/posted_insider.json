@@ -84,6 +84,12 @@
       "posted_at": "2026-06-16",
       "progress_count": 3
     },
+    "cluster:EPAC:sell": {
+      "completed_date": "2026-07-02",
+      "completing_filing_id": 3978,
+      "posted_at": "2026-07-02",
+      "progress_count": 5
+    },
     "cluster:HEAL:buy": {
       "completed_date": "2026-06-11",
       "completing_filing_id": 3817,
