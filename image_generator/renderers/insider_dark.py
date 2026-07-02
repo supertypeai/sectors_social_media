@@ -217,7 +217,8 @@ class InsiderEarningsRendererMixin:
         # Centered sub label — title-cased, with extra breathing room at bottom
         if sub:
             sub_fnt = font("Inter-Regular.ttf", 17)
-            sub_text = sub.title()
+            # Title-case, but keep all-caps acronyms (IDX, IDR) intact.
+            sub_text = " ".join(w if w.isupper() else w.capitalize() for w in sub.split())
             sw = draw.textlength(sub_text, font=sub_fnt)
             draw.text((x + (width - sw) // 2, y + 126), sub_text, font=sub_fnt, fill="#8888a0")
 
@@ -2863,10 +2864,7 @@ class InsiderEarningsRendererMixin:
             self._dark_stat_card(img, draw, M + 2 * (sw + gap), sy2, sw, "AVG PRICE PAID",
                                  f"IDR {avg_buy:,.0f}" if avg_buy else "-", "per share", colors["avg"])
 
-        modules = [("WHY 5%?", "Anyone owning 5%+ must be publicly reported", "#F29942")]
-        sig_y = sy2 + 164 + 22
-        card_bottom = self._dark_signal_card(draw, img, M, sig_y, W - 2 * M, modules, accent, header="GOOD TO KNOW")
-        self._maybe_read_more(img, draw, W, card_bottom, base.lower(), accent)
+        self._maybe_read_more(img, draw, W, sy2 + 164, base.lower(), accent)
         self._dark_page_dots(draw, W, 1180, 1, 2, accent)
         paths.append(self._save(img, f"{prefix}_2.png"))
 
@@ -3089,27 +3087,8 @@ class InsiderEarningsRendererMixin:
         self._dark_stat_card(img, draw, M + 2 * (sw + gap), sy2, sw, "COMPANY SIZE",
                              f"#{rank}" if rank else "-", "biggest on IDX", colors["market"])
 
-        if is_drop:
-            if rg is not None and rg > 0:
-                quality = "Sold more but earned less — costs grew faster"
-            elif rg is not None and rg < 0:
-                quality = "Profit AND revenue both fell — a real slowdown"
-            else:
-                quality = "Profit fell even though revenue held up"
-            module_title = "WHAT HAPPENED?"
-        else:
-            if rg is not None and rg > 0:
-                quality = "Both profit AND revenue are up — healthy growth"
-            elif rg is not None and rg < 0:
-                quality = "Profit up but revenue slipped — could be a one-off"
-            else:
-                quality = "Profit up mostly on margins or one-offs"
-            module_title = "IS IT REAL?"
         sym_slug = base.replace(".JK", "").lower()
-        modules = [(module_title, quality, "#F29942")]
-        sig_y = sy2 + 164 + 22
-        card_bottom = self._dark_signal_card(draw, img, M, sig_y, W - 2 * M, modules, accent, header="GOOD TO KNOW")
-        self._maybe_read_more(img, draw, W, card_bottom, sym_slug, accent)
+        self._maybe_read_more(img, draw, W, sy2 + 164, sym_slug, accent)
         self._dark_page_dots(draw, W, 1180, 1, 2, accent)
         paths.append(self._save(img, f"{prefix}_2.png"))
 
