@@ -78,6 +78,12 @@
       "posted_at": "2026-06-26",
       "progress_count": 3
     },
+    "cluster:BYAN:sell": {
+      "completed_date": "2026-07-03",
+      "completing_filing_id": 3989,
+      "posted_at": "2026-07-03",
+      "progress_count": 3
+    },
     "cluster:CYBR:sell": {
       "completed_date": "2026-06-16",
       "completing_filing_id": 3853,
