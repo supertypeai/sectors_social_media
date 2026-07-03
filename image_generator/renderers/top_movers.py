@@ -18,7 +18,9 @@ class TopCompaniesMoversRenderer(SocialImageRenderer):
     SECTION_GAP = 15
 
     def get_background(self):
-        return self._open("Insider trading.png")
+        # Source asset is 4800x6000 (4x every other template), downscale it (2x)
+        image = self._open("Insider trading.png")
+        return image.resize((2400, 3000), Image.Resampling.LANCZOS)
 
     def _format_pct_change(self, pct_change: float) -> str:
         display_value = pct_change * 100
