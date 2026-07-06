@@ -144,10 +144,7 @@ class ForeignFlowRenderer(SocialImageRenderer):
         x2 = self._dark_pill(draw, img, ex, ey, "FOREIGN FLOW", "#F29942")
         self._dark_pill(draw, img, x2 + 16, ey, "NET BUY" if is_buy else "NET SELL",
                         accent, arrow="up" if is_buy else "down")
-        logo_sz = 62
-        if top_base and top_base != "—":
-            self._logo(img, (W - M - 32 - logo_sz, ey + (48 - logo_sz) // 2), top_base,
-                       size=logo_sz, accent=accent)
+        # Keep the header clean; the stock-specific logo is shown in the chart instead.
 
         draw.text((ex, ey + 76), f"IDX · {format_date_range(window)}",
                   font=font("Inter-Bold.ttf", 24), fill=accent)
