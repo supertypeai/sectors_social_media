@@ -35,6 +35,11 @@
       "latest_quarter": "Q1-2026",
       "posted_at": "2026-06-12"
     },
+    "earnings:CITA:Q1-2026:drop": {
+      "earnings_growth": -0.7209155082901217,
+      "latest_quarter": "Q1-2026",
+      "posted_at": "2026-07-08"
+    },
     "earnings:CUAN:Q1-2026:spike": {
       "earnings_growth": 2.4208795251575403,
       "latest_quarter": "Q1-2026",
