@@ -436,7 +436,6 @@ CATEGORY_SHORT = {
     "IPO": "IPO",
 }
 
-
 class SocialImageRenderer(InsiderEarningsRendererMixin):
     CLUSTER_COLORS = {
         "buy": "#5BAA5A",
@@ -560,6 +559,24 @@ class SocialImageRenderer(InsiderEarningsRendererMixin):
             tw = bbox[2] - bbox[0]
             th = bbox[3] - bbox[1]
             draw.text((x + (size - tw) / 2, y + (size - th) / 2 - 5), symbol_char, font=fnt, fill=accent)
+
+    def _macro_logo(self, image, xy, size=64):
+        """Anchor for non-ticker (macro/regulatory) rows: the IDX mark. These
+        stories aren't tied to one company, so we use the exchange logo instead
+        of a company logo or a monogram tile."""
+        x, y = xy
+        if getattr(self, "_idx_logo_src", None) is None:
+            self._idx_logo_src = Image.open(
+                self.background_dir / "logo-idx-no-text.webp"
+            ).convert("RGBA")
+        logo_img = ImageOps.fit(self._idx_logo_src, (size, size), Image.Resampling.LANCZOS)
+        mask = Image.new("L", (size, size), 0)
+        ImageDraw.Draw(mask).ellipse((0, 0, size, size), fill=255)
+        circular = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        circular.paste(logo_img, (0, 0), mask)
+        draw = ImageDraw.Draw(image)
+        draw.ellipse((x, y, x + size, y + size), fill="#ffffff", outline="#eeeeee", width=1)
+        image.paste(circular, (x, y), circular)
 
     def _open(self, template):
         return Image.open(self.background_dir / template).convert("RGBA")
@@ -1123,11 +1140,8 @@ class SocialImageRenderer(InsiderEarningsRendererMixin):
             extra_count = max(0, len(tickers) - 1)
             is_multi = extra_count > 0
 
-            if tickers:
-                logo_symbol = tickers[0]
-            else:
-                title_words = str(news.get("title") or "").replace("PT ", "").split()
-                logo_symbol = title_words[0][:4].upper() if title_words else "?"
+            is_macro = not tickers
+            logo_symbol = tickers[0] if tickers else None
 
             num_fnt = font("Inter-Bold.ttf", 28)
             num_text = f"{idx_global:02d}"
@@ -1135,7 +1149,10 @@ class SocialImageRenderer(InsiderEarningsRendererMixin):
             draw.text((margin + (number_col_w - num_w) / 2 - 6, y + (logo_size - 28) / 2), num_text, font=num_fnt, fill=COLORS["faint"])
 
             logo_x = margin + number_col_w
-            self._logo(image, (logo_x, y), logo_symbol, size=logo_size, accent=accent)
+            if is_macro:
+                self._macro_logo(image, (logo_x, y), size=logo_size)
+            else:
+                self._logo(image, (logo_x, y), logo_symbol, size=logo_size, accent=accent)
 
             if is_multi:
                 badge_d = 32
@@ -1166,21 +1183,28 @@ class SocialImageRenderer(InsiderEarningsRendererMixin):
                 draw.text((cursor_x + 11, y + 6), primary_ticker, font=ticker_fnt, fill=COLORS["ink"])
                 cursor_x += ticker_pill_w + 10
 
-            headline_bottom = y + chip_h + 8
             headline = clean_headline(news.get("title"))
+            headline_bottom = y + logo_size if is_macro else y + chip_h + 8
             if headline:
                 headline_fnt = font("Inter-SemiBold.ttf", 26)
                 headline_emph_fnt = font("Inter-Bold.ttf", 26)
-                headline = truncate_to_clause(draw, headline, headline_fnt, w - right_x - margin, max_lines=3)
+                headline_max_w = w - right_x - margin
+                headline = truncate_to_clause(draw, headline, headline_fnt, headline_max_w, max_lines=3)
+                if is_macro:
+                    n_lines = max(1, len(wrap_text(draw, headline, headline_fnt, headline_max_w, max_lines=3)))
+                    block_h = n_lines * headline_fnt.size + (n_lines - 1) * 9
+                    headline_top = y + max(0, (logo_size - block_h) // 2)
+                else:
+                    headline_top = y + chip_h + 12
                 headline_bottom = draw_wrapped_with_emphasis(
                     draw,
-                    (right_x, y + chip_h + 12),
+                    (right_x, headline_top),
                     headline,
                     headline_fnt,
                     headline_emph_fnt,
                     COLORS["ink"],
                     accent,
-                    w - right_x - margin,
+                    headline_max_w,
                     line_gap=9,
                     max_lines=3,
                 )
@@ -1204,7 +1228,7 @@ class SocialImageRenderer(InsiderEarningsRendererMixin):
                     draw.text((strip_x + 4, strip_y + 4), more_text, font=strip_fnt, fill=COLORS["muted"])
                 headline_bottom = strip_y + 24
 
-            y = headline_bottom + 48
+            y = max(headline_bottom, y + logo_size) + 48
 
         shown_ids = {id(item) for _, item in selected}
         more_count = sum(1 for n in eligible if id(n) not in shown_ids)
@@ -1234,7 +1258,7 @@ class SocialImageRenderer(InsiderEarningsRendererMixin):
                 parts.append(f"{rest} other")
             note = " · ".join(parts) if parts else "from past 24h"
             note_fnt = font("Inter-Regular.ttf", 20)
-            draw.text((margin + pill_text_w + 52, y + 16), note, font=note_fnt, fill=COLORS["faint"])
+            draw.text((margin + pill_text_w + 52, y + 16), note, font=note_fnt, fill=COLORS["muted"])
             y += pill_h + 16
 
         cta_fnt = font("Inter-SemiBold.ttf", 24)
