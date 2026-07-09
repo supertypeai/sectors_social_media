@@ -96,6 +96,12 @@
       "posted_at": "2026-07-03",
       "progress_count": 3
     },
+    "cluster:CUAN:buy": {
+      "completed_date": "2026-07-09",
+      "completing_filing_id": 4058,
+      "posted_at": "2026-07-09",
+      "progress_count": 3
+    },
     "cluster:CYBR:sell": {
       "completed_date": "2026-06-16",
       "completing_filing_id": 3853,
