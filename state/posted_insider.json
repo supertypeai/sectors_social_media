@@ -120,6 +120,12 @@
       "posted_at": "2026-06-11",
       "progress_count": 3
     },
+    "cluster:KLBF:buy": {
+      "completed_date": "2026-07-10",
+      "completing_filing_id": 4079,
+      "posted_at": "2026-07-10",
+      "progress_count": 5
+    },
     "cluster:MICE:buy": {
       "completed_date": "2026-07-01",
       "completing_filing_id": 3977,
