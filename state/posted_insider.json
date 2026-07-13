@@ -132,6 +132,12 @@
       "posted_at": "2026-07-01",
       "progress_count": 3
     },
+    "cluster:PGAS:buy": {
+      "completed_date": "2026-07-12",
+      "completing_filing_id": 4098,
+      "posted_at": "2026-07-13",
+      "progress_count": 3
+    },
     "cluster:SMDR:buy": {
       "completed_date": "2026-06-12",
       "completing_filing_id": 3829,
