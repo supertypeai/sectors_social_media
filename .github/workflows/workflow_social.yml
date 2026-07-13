@@ -71,6 +71,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_API_KEY2: ${{ secrets.GEMINI_API_KEY2 }}
           GEMINI_API_KEY3: ${{ secrets.GEMINI_API_KEY3 }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           echo "Running mode=${{ steps.resolve_mode.outputs.mode }} channel=${{ steps.resolve_mode.outputs.channel }} day=${{ steps.resolve_mode.outputs.day }} target_indices=${{ steps.resolve_mode.outputs.target_indices }}"
           if [ "${{ steps.resolve_mode.outputs.mode }}" = "stock-performance" ]; then
