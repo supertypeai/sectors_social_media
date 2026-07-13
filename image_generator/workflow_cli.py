@@ -1,5 +1,5 @@
 from pathlib import Path
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 import tldextract
 
 from .renderers.quarterly import QuarterlyRenderer
@@ -18,7 +18,7 @@ from .renderers.lq45_ytd import LQ45YTDRenderer
 from .renderers.insider_roundup import InsiderRoundupRenderer
 from .renderers.macro_news import MacroNewsRenderer
 from .renderers.stock_performance import StockPerformanceRenderer
-from .render import BACKGROUND_DIR
+from .render import BACKGROUND_DIR, clean_slug
 from .utils.slack import upload_posts_to_slack
 from .classification import (
     prepare_data_by_mcap,
@@ -35,6 +35,7 @@ from .data import (
     fetch_agm_data,
     fetch_upcoming_dividends,
     fetch_volume_spike_data,
+    fetch_news_for_symbol,
     fetch_anomaly_data,
     fetch_foreign_flow_data,
     fetch_company_report_ownership,
@@ -49,6 +50,8 @@ from .data import (
     group_companies_by_index
 )
 from .summarizer import NewsSummarizer
+from .social_queue import queue_post
+from .post_routing import scheduled_at_for
 from .utils.io_helper import load_dividend_state, save_dividend_state
 from .triggers import (
     load_ownership_state,
@@ -67,6 +70,17 @@ import time
 
 
 app = typer.Typer(help="Run Sectors social media generation jobs.")
+
+
+def _queue_post(base_content_type, image_paths, caption, content_type=None):
+    """queue_post wrapper that applies the post-schedule policy from
+    post_routing.py (when a content type should post vs. when it was
+    generated), so every call site gets it automatically."""
+    return queue_post(
+        base_content_type, image_paths, caption,
+        content_type=content_type,
+        scheduled_at=scheduled_at_for(base_content_type),
+    )
 
 
 @app.command("quarterly")
@@ -124,11 +138,41 @@ def companies_mover(
     path = renderer.render(data=workflow_data)
     typer.echo(path.resolve())
 
+    leaders = renderer._ranked_companies(workflow_data, "one_month_leaders")
+    laggards = renderer._ranked_companies(workflow_data, "one_month_laggards")
+    leaders = [{"symbol": c["symbol"].replace(".JK", ""), "pct_change": c["one_month_leaders"]["pct_change"]} for c in leaders]
+    laggards = [{"symbol": c["symbol"].replace(".JK", ""), "pct_change": c["one_month_laggards"]["pct_change"]} for c in laggards]
+
+    today = datetime.now(timezone.utc)
+    since = today - timedelta(days=30)
+    date_range = f"{since.strftime('%Y-%m-%d')} to {today.strftime('%Y-%m-%d')}"
+
+    caption = None
+    try:
+        summarizer = NewsSummarizer()
+    except Exception as error:
+        typer.echo(f"LLM companies-mover caption disabled (summarizer init failed): {error}")
+        summarizer = None
+
+    if summarizer is not None:
+        try:
+            index_return = fetch_index_performance(target_indices=["IHSG"], day=30).get("IHSG")
+            news_articles = fetch_macro_news(th_score=70, since=since)
+            caption = summarizer.generate_companies_mover_caption(index_return, date_range, leaders, laggards, news_articles)
+        except Exception as error:
+            typer.echo(f"Companies-mover caption LLM failed: {error}")
+
+    caption = f"{caption or 'Top movers update'}\n\n#IDX #StockMarket #Indonesia #SectorsApp"
+    typer.echo("--- caption ---")
+    typer.echo(caption)
+
+    try:
+        _queue_post("companies-mover", path, caption)
+    except Exception as error:
+        typer.echo(f"Queue write failed for companies-mover: {error}")
+
     if slack_channel:
-        upload_posts_to_slack(
-            [(path, "Top movers update\n\n#IDX #StockMarket #Indonesia #SectorsApp")],
-            slack_channel=slack_channel,
-        )
+        upload_posts_to_slack([(path, caption)], slack_channel=slack_channel)
 
 
 @app.command("agm")
@@ -148,11 +192,15 @@ def agm(
     for path in paths:
         typer.echo(path.resolve())
 
+    agm_caption = "AGM Results\n\n#IDX #StockMarket #Indonesia #AGM #SectorsApp"
+    for i, path in enumerate(paths):
+        try:
+            _queue_post("agm", path, agm_caption, content_type=f"agm-{i + 1}")
+        except Exception as error:
+            typer.echo(f"Queue write failed for agm page {i + 1}: {error}")
+
     if slack_channel:
-        posts = [
-            (path, "AGM Results\n\n#IDX #StockMarket #Indonesia #AGM #SectorsApp")
-            for path in paths
-        ]
+        posts = [(path, agm_caption) for path in paths]
         upload_posts_to_slack(posts, slack_channel=slack_channel)
 
 
@@ -172,11 +220,18 @@ def upcoming_dividend(
     for path in paths:
         typer.echo(path.resolve())
 
+    dividend_caption = "Upcoming Dividends\n\n#IDX #StockMarket #Indonesia #Dividends #SectorsApp"
+    # post_type='story' is single-image only, and this can paginate into
+    # several table pages - queue each page as its own Story (a sequence of
+    # Stories, not a carousel, since IG Stories can't hold multiple images).
+    for i, path in enumerate(paths):
+        try:
+            _queue_post("upcoming-dividend", path, dividend_caption, content_type=f"upcoming-dividend-{i + 1}")
+        except Exception as error:
+            typer.echo(f"Queue write failed for upcoming-dividend page {i + 1}: {error}")
+
     if slack_channel:
-        posts = [
-            (path, "Upcoming Dividends\n\n#IDX #StockMarket #Indonesia #Dividends #SectorsApp")
-            for path in paths
-        ]
+        posts = [(path, dividend_caption) for path in paths]
         upload_posts_to_slack(posts, slack_channel=slack_channel)
 
         
@@ -237,6 +292,10 @@ def dividend(
 
         paths.append((path, caption))
         path_to_record[path] = record
+        try:
+            _queue_post("dividend", path, caption, content_type=f"dividend-{clean_slug(symbol)}")
+        except Exception as error:
+            typer.echo(f"Queue write failed for dividend {symbol}: {error}")
 
     if slack_channel:
         uploaded = upload_posts_to_slack(
@@ -257,6 +316,25 @@ def dividend(
             save_dividend_state(state)
     
 
+_VOLUME_SPIKE_TAGS = "#IDX #StockMarket #Indonesia #VolumeSpike #SectorsApp"
+
+
+def _volume_spike_stats(df_spike):
+    """Per-symbol trading stats matching what VolumeSpikeRenderer draws on the
+    card, reshaped for the caption prompt (see summarizer.generate_volume_spike_caption)."""
+    rows = []
+    for _, row in df_spike.iterrows():
+        net_idr = (row["foreign_buy_volume"] - row["foreign_sell_volume"]) * row["close"]
+        rows.append({
+            "symbol": str(row["symbol"]).replace(".JK", ""),
+            "close_change_7d": (row.get("close_change_7d") or 0) * 100,
+            "volume_ratio": row["volume_ratio"],
+            "foreign_activity": row["foreign_activity"],
+            "foreign_net_idr": net_idr,
+        })
+    return rows
+
+
 @app.command("volume-spike")
 def volume_spike(
     output: Path = typer.Option(Path("output"), "--output", "-o"),
@@ -274,11 +352,38 @@ def volume_spike(
     for path in paths:
         typer.echo(path.resolve())
 
+    rows = _volume_spike_stats(data["df_spike"])
+
+    try:
+        summarizer = NewsSummarizer()
+    except Exception as error:
+        typer.echo(f"LLM volume-spike caption disabled (summarizer init failed): {error}")
+        summarizer = None
+
+    caption = None
+    if summarizer is not None:
+        try:
+            news_articles = None
+            if len(rows) == 1:
+                # Single symbol: ground the "why" in real reporting from the
+                # run-up to today rather than letting the model invent a cause.
+                since = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+                news_articles = fetch_news_for_symbol(rows[0]["symbol"], since=since)
+            caption = summarizer.generate_volume_spike_caption(rows, news_articles)
+        except Exception as error:
+            typer.echo(f"Volume spike caption LLM failed: {error}")
+
+    caption = f"{caption or 'Volume Spike Alert'}\n\n{_VOLUME_SPIKE_TAGS}"
+    typer.echo("--- caption ---")
+    typer.echo(caption)
+
+    try:
+        _queue_post("volume-spike", paths, caption)
+    except Exception as error:
+        typer.echo(f"Queue write failed for volume-spike: {error}")
+
     if slack_channel:
-        posts = [
-            (path, "Volume Spike Alert\n\n#IDX #StockMarket #Indonesia #VolumeSpike #SectorsApp")
-            for path in paths
-        ]
+        posts = [(paths[0], caption)] + [(path, "Volume Spike Alert") for path in paths[1:]]
         upload_posts_to_slack(posts, slack_channel=slack_channel)
 
 
@@ -327,11 +432,15 @@ def foreign_flow(
     for path in paths:
         typer.echo(path.resolve())
 
+    flow_caption = "Where foreign money moved this week\n\n#IDX #StockMarket #Indonesia #ForeignFlow #SectorsApp"
+    for i, path in enumerate(paths):
+        try:
+            _queue_post("foreign-flow", path, flow_caption, content_type=f"foreign-flow-{i + 1}")
+        except Exception as error:
+            typer.echo(f"Queue write failed for foreign-flow page {i + 1}: {error}")
+
     if slack_channel:
-        posts = [
-            (path, "Where foreign money moved this week\n\n#IDX #StockMarket #Indonesia #ForeignFlow #SectorsApp")
-            for path in paths
-        ]
+        posts = [(path, flow_caption) for path in paths]
         upload_posts_to_slack(posts, slack_channel=slack_channel)
 
 
@@ -485,11 +594,63 @@ def macro_news(
         typer.echo(path.resolve())
         paths.append(path)
 
+        headline = " ".join(slide.get("headline_lines") or [])
+        body = slide.get("body") or ""
+        insight = slide.get("insight") or ""
+        slide_caption = "\n\n".join(part for part in [headline, body, insight] if part) or "Macro News"
+        slide_caption = f"{slide_caption}\n\n#IDX #StockMarket #Indonesia #MacroNews #SectorsApp"
+        try:
+            _queue_post("macro-news", path, slide_caption, content_type=f"macro-news-{index + 1}")
+        except Exception as error:
+            typer.echo(f"Queue write failed for macro-news slide {index + 1}: {error}")
+
     if slack_channel and paths:
         caption = "Macro News\n\n#IDX #StockMarket #Indonesia #MacroNews #SectorsApp"
         posts = [(paths[0], caption), *paths[1:]]
 
         upload_posts_to_slack(posts, slack_channel=slack_channel)
+
+
+_STOCK_PERF_TAGS = "#IDX #StockMarket #Indonesia #StockPerformance #SectorsApp"
+
+
+def _pick_index_driver(index_return, records, day):
+    """The constituent that tells the "diverging from the index" story:
+    when the index is down, that's whoever is defying the trend hardest
+    (best return - a resilience story); when the index is up, it's whoever
+    is lagging hardest (worst return) - not just the biggest gap in either
+    direction, which would as easily surface an underperformer-among-losers
+    as a stock actually bucking the broader trend. Pairs with the gainers
+    image (generate_index_driver_caption).
+    """
+    if index_return is None or not records:
+        return None
+    return_key = f"return_{day}d"
+    picker = max if index_return <= 0 else min
+    driver = picker(records, key=lambda r: r.get(return_key) or 0)
+    return {
+        "symbol": str(driver["symbol"]).replace(".JK", ""),
+        "company_name": driver.get("company_name"),
+        "return": driver.get(return_key) or 0.0,
+    }
+
+
+def _pick_index_laggard(records, day):
+    """The single worst-performing constituent, full stop - the "biggest
+    drop" name the losers image itself is built around, regardless of which
+    way the index moved. Pairs with the losers image
+    (generate_index_laggard_caption); unlike _pick_index_driver this isn't
+    direction-aware because the losers slide's own framing already is.
+    """
+    if not records:
+        return None
+    return_key = f"return_{day}d"
+    laggard = min(records, key=lambda r: r.get(return_key) or 0)
+    return {
+        "symbol": str(laggard["symbol"]).replace(".JK", ""),
+        "company_name": laggard.get("company_name"),
+        "return": laggard.get(return_key) or 0.0,
+    }
 
 
 @app.command("stock-performance")
@@ -517,53 +678,82 @@ def stock_performance(
     companies = fetch_stock_performance(companies=companies, day=day)
     data_indices = group_companies_by_index(companies)
 
-    paths = []
+    try:
+        summarizer = NewsSummarizer()
+    except Exception as error:
+        typer.echo(f"LLM index-driver caption disabled (summarizer init failed): {error}")
+        summarizer = None
+
+    # One post per index per run - which framing depends on how rough the
+    # index's own move was. A steep drop (< -2.5%) makes "who's diverging
+    # from the trend" a strange lead story; "biggest drops" (the full
+    # laggard board) is the more honest one. Anything milder - flat, up, or
+    # a shallow dip - flips back to "index drivers" (who's bucking/lagging
+    # the trend), which needs an actual trend to diverge from to be
+    # interesting.
+    DROP_THRESHOLD_PCT = -2.5
 
     for company_index in target_indices:
         return_key = f"return_{day}d"
+        index_return = indices_performance.get(company_index)
+        since = (today - timedelta(days=day * 2)).strftime("%Y-%m-%d")
 
-        records_gainers = sorted(
+        use_biggest_drops = index_return is not None and index_return < DROP_THRESHOLD_PCT
+        direction = "losers" if use_biggest_drops else "gainers"
+
+        records = sorted(
             data_indices[company_index],
             key=lambda record: record[return_key],
-            reverse=True,
+            reverse=not use_biggest_drops,
         )
 
-        records_losers = sorted(
-            data_indices[company_index],
-            key=lambda record: record[return_key],
-            reverse=False,
-        )
-
-        path_gainers = renderer.render(
+        path = renderer.render(
             index_name=company_index,
-            records=records_gainers,
-            index_performance=indices_performance.get(company_index),
+            records=records,
+            index_performance=index_return,
             as_of_date=today.strftime("%Y-%m-%d"),
-            filename=f"{day}_stock_performance_gainers_{company_index.lower()}.png",
-            direction="gainers",
+            filename=f"{day}_stock_performance_{direction}_{company_index.lower()}.png",
+            direction=direction,
             day=day,
         )
-
-        path_losers = renderer.render(
-            index_name=company_index,
-            records=records_losers,
-            as_of_date=today.strftime("%Y-%m-%d"),
-            index_performance=indices_performance.get(company_index),
-            filename=f"{day}_stock_performance_losers_{company_index.lower()}.png",
-            direction="losers",
-            day=day,
-        )
-
-        paths.append(path_gainers)
-        paths.append(path_losers)
-
-    for path in paths:
         typer.echo(path.resolve())
 
-    if slack_channel and paths:
-        caption = "Stock Performance\n\n#IDX #StockMarket #Indonesia #StockPerformance #SectorsApp"
-        posts = [(paths[0], caption), *paths[1:]]
-        upload_posts_to_slack(posts, slack_channel=slack_channel)
+        caption = None
+        if summarizer is not None and index_return is not None:
+            try:
+                if use_biggest_drops:
+                    laggard = _pick_index_laggard(data_indices[company_index], day)
+                    if laggard:
+                        news_articles = fetch_news_for_symbol(laggard["symbol"], since=since)
+                        caption = summarizer.generate_index_laggard_caption(
+                            company_index, index_return, day, laggard, news_articles
+                        )
+                else:
+                    driver = _pick_index_driver(index_return, data_indices[company_index], day)
+                    if driver:
+                        news_articles = fetch_news_for_symbol(driver["symbol"], since=since)
+                        caption = summarizer.generate_index_driver_caption(
+                            company_index, index_return, day, driver, news_articles
+                        )
+            except Exception as error:
+                kind = "laggard" if use_biggest_drops else "driver"
+                typer.echo(f"Index {kind} caption LLM failed for {company_index}: {error}")
+
+        default_caption = f"{company_index} Losers" if use_biggest_drops else "Stock Performance"
+        caption = f"{caption or default_caption}\n\n{_STOCK_PERF_TAGS}"
+        typer.echo(f"--- {company_index} {direction} caption ---")
+        typer.echo(caption)
+
+        try:
+            _queue_post(
+                "stock-performance", path, caption,
+                content_type=f"stock-performance-{direction}-{clean_slug(company_index)}",
+            )
+        except Exception as error:
+            typer.echo(f"Queue write failed for stock-performance {company_index}: {error}")
+
+        if slack_channel:
+            upload_posts_to_slack([(path, caption)], slack_channel=slack_channel)
 
 
 @app.command("weekly-movers")

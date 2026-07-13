@@ -1,0 +1,51 @@
+name: Publish Queued Social Posts
+
+# Consumes social_post_queue (Supabase) and publishes due rows to Instagram
+# (Threads once THREADS_ACCESS_TOKEN/THREADS_USER_ID secrets exist). Supabase
+# is the state store here, not a repo file, so unlike the generator workflows
+# this job never needs contents: write / a git-push-state step.
+
+on:
+  # Unlike the rest of this repo's workflows (which avoid native GH Actions
+  # cron due to 5h+ drift seen under load), this job runs every 30 min and
+  # is self-correcting: a due row just gets picked up on the next tick
+  # regardless of a few minutes of scheduler jitter, so the precision that
+  # matters for e.g. a single daily content post doesn't matter here.
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  # A run can take a while (10s/30s sleep per row); this stops a slow run
+  # from overlapping the next scheduled trigger and double-processing rows.
+  group: social-publisher
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run publisher
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
+          THREADS_USER_ID: ${{ secrets.THREADS_USER_ID }}
+        run: python -m image_generator.publisher

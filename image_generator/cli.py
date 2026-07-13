@@ -16,6 +16,8 @@ from .classification import (
     group_context_filings,
 )
 from .insider_patterns import (
+    _filing_date,
+    _safe_float,
     drop_mixed_leg_filings,
     filter_plain_filings,
     group_becoming_insider,
@@ -33,14 +35,18 @@ from .data import (
     fetch_filings,
     fetch_latest_broker_date,
     fetch_news,
+    fetch_news_for_symbol,
+    fetch_supabase_table,
     fetch_weekly_accumulation,
     fetch_weekly_bandar_plays,
     fetch_weekly_distribution,
     load_records,
 )
 from .utils.slack import upload_posts_to_slack
-from .render import SocialImageRenderer
+from .render import SocialImageRenderer, clean_slug, normalize_tags
 from .summarizer import NewsSummarizer
+from .social_queue import queue_post
+from .post_routing import scheduled_at_for
 
 
 def date_label(value=None):
@@ -113,7 +119,138 @@ def _extend_captioned(paths, rp, caption):
         paths.append((slide, caption if i == 0 else title))
 
 
-def _insider_caption(p, feed):
+def _pattern_filing_excerpts(df, symbols, holder_names, window_start=None, window_end=None, limit=6):
+    """Real filing title/body text for a holder+symbol(s) combo, so a caption
+    can cite the actually-disclosed transaction purpose (filings often
+    literally say "The stated purpose of the transaction was ...") instead of
+    inventing a cause. Early filings in a chain carry that real text; later
+    ones in the same chain degrade into an auto-generated "Nth insider
+    sell..." summary - excerpts with "stated purpose" are surfaced first so
+    those aren't crowded out by the generic ones.
+
+    `symbols` may be a single symbol string or an iterable of symbols (e.g.
+    for a "cross" pattern spanning several stocks).
+    """
+    if df is None or df.empty or not holder_names:
+        return []
+
+    want_symbols = {symbols} if isinstance(symbols, str) else set(symbols)
+    want = {str(h).strip().lower() for h in holder_names}
+    sub = df[
+        (df["symbol"].isin(want_symbols)) &
+        (df["holder_name"].apply(lambda v: str(v).strip().lower() in want))
+    ]
+
+    dated = []
+    for row in sub.to_dict("records"):
+        d = _filing_date(row)
+        if d is None:
+            continue
+        day = d.strftime("%Y-%m-%d")
+        if window_start and day < window_start:
+            continue
+        if window_end and day > window_end:
+            continue
+        dated.append((d, row))
+    dated.sort(key=lambda pair: pair[0])
+
+    def _has_purpose(row):
+        return "stated purpose" in str(row.get("body") or "").lower()
+
+    ordered = sorted(dated, key=lambda pair: 0 if _has_purpose(pair[1]) else 1)
+
+    excerpts, seen = [], set()
+    for _, row in ordered:
+        body = str(row.get("body") or "").strip()
+        title = str(row.get("title") or "").strip()
+        if not body and not title:
+            continue
+        if body in seen:
+            continue
+        seen.add(body)
+        excerpts.append({"title": title or "(untitled filing)", "text": body[:500]})
+        if len(excerpts) >= limit:
+            break
+    return excerpts
+
+
+def _find_counterparty_filing(df, symbol, date_str, shares, exclude_holder, day_tolerance=1, pct_tolerance=0.02):
+    """Best-effort match for the other side of a negotiated block trade: another
+    holder who filed the opposite-direction transaction for ~the same share
+    count on the same symbol within a day or two of the crossing filing.
+    """
+    if df is None or df.empty or not shares or not date_str:
+        return None
+
+    exclude = str(exclude_holder).strip().lower()
+    sub = df[
+        (df["symbol"] == symbol) &
+        (df["holder_name"].apply(lambda v: str(v).strip().lower() != exclude))
+    ]
+    try:
+        target = datetime.strptime(date_str, "%Y-%m-%d")
+    except ValueError:
+        return None
+
+    best, best_diff = None, None
+    for row in sub.to_dict("records"):
+        d = _filing_date(row)
+        if d is None or abs((d.date() - target.date()).days) > day_tolerance:
+            continue
+        amount = _safe_float(row.get("amount_transaction"))
+        if not amount:
+            continue
+        diff = abs(amount - shares) / shares
+        if diff > pct_tolerance:
+            continue
+        if best_diff is None or diff < best_diff:
+            best_diff, best = diff, row
+    return best
+
+
+def _ownership_note(symbol):
+    """Short factual note on who runs/owns the company - key executives and
+    the major-shareholder cap table - so a caption can note e.g. that an
+    acting holder is a minority stakeholder relative to a family/group that
+    holds board control, without inventing a controlling-family label that
+    isn't evidenced by the data (e.g. a shared surname across executives)."""
+    try:
+        df = fetch_supabase_table(
+            "idx_company_report",
+            columns="symbol,key_executives,major_shareholders",
+            symbol_column="symbol",
+            symbol_value=f"{symbol}.JK" if not symbol.endswith(".JK") else symbol,
+        )
+    except Exception:
+        return None
+    if df.empty:
+        return None
+
+    row = df.to_dict("records")[0]
+    lines = []
+
+    execs = row.get("key_executives")
+    if isinstance(execs, list) and execs:
+        names = "; ".join(
+            f"{e.get('name')} ({e.get('position')})" for e in execs if e.get("name")
+        )
+        if names:
+            lines.append(f"Key executives: {names}.")
+
+    holders = row.get("major_shareholders")
+    if isinstance(holders, list) and holders:
+        parts = []
+        for h in sorted(holders, key=lambda x: _safe_float(x.get("share_percentage")) or 0, reverse=True):
+            pct = _safe_float(h.get("share_percentage"))
+            if h.get("name") and pct is not None:
+                parts.append(f"{h['name']} {pct * 100:.1f}%")
+        if parts:
+            lines.append("Major shareholders: " + ", ".join(parts) + ".")
+
+    return " ".join(lines) if lines else None
+
+
+def _insider_caption(p, feed, df=None, summarizer=None):
     sym = str(p.get("base_symbol") or p.get("symbol") or "").upper()
     direction = str(p.get("direction") or "").lower()
     kind = p.get("kind")
@@ -129,17 +266,77 @@ def _insider_caption(p, feed):
     else:  # cluster
         word = "buy" if direction == "buy" else "sell"
         title = f":busts_in_silhouette: *Insider {word} cluster — {sym}*"
+
+    insight = None
+    if summarizer is not None and df is not None and kind in {"cluster", "chain", "cross"}:
+        try:
+            if kind == "cluster":
+                holder_names = [h["name"] for h in (p.get("roster") or []) if h.get("name")]
+                excerpts = _pattern_filing_excerpts(
+                    df, p.get("symbol"), holder_names,
+                    window_start=p.get("window_start"), window_end=p.get("window_end"),
+                )
+                news_articles = fetch_news_for_symbol(sym, since=p.get("window_start"))
+                ownership_note = _ownership_note(sym)
+                insight = summarizer.generate_insider_cluster_caption(p, excerpts, news_articles, ownership_note)
+            elif kind == "chain":
+                holder_names = [p.get("holder_name")] if p.get("holder_name") else []
+                excerpts = _pattern_filing_excerpts(
+                    df, p.get("symbol"), holder_names,
+                    window_start=p.get("window_start"), window_end=p.get("window_end"),
+                )
+                news_articles = fetch_news_for_symbol(sym, since=p.get("window_start"))
+                insight = summarizer.generate_insider_chain_caption(p, excerpts, news_articles)
+            else:  # cross: one holder rotating across several stocks
+                holder = p.get("holder_name")
+                stocks = p.get("stocks") or []
+                stock_symbols = [s["symbol"] for s in stocks if s.get("symbol")]
+                excerpts = _pattern_filing_excerpts(
+                    df, stock_symbols, [holder] if holder else [],
+                    window_start=p.get("window_start"), window_end=p.get("window_end"),
+                )
+                news_articles = []
+                # Stocks are pre-sorted by value desc - only the biggest few
+                # are worth grounding; a 6-stock rotation doesn't need news
+                # for every name.
+                for s in stocks[:3]:
+                    news_articles.extend(
+                        fetch_news_for_symbol(s["base_symbol"], since=p.get("window_start"), limit=3)
+                    )
+                insight = summarizer.generate_insider_cross_caption(p, excerpts, news_articles)
+        except Exception as error:
+            print(f"Insider caption LLM failed for {sym or p.get('holder_name')}: {error}")
+
+    body = f"\n\n{insight}" if insight else ""
     feedtag = "#InsiderStory" if feed == "story" else "#InsiderSignal"
-    return f"{title}\n\n{_TAGS} {feedtag} #SectorsApp"
+    return f"{title}{body}\n\n{_TAGS} {feedtag} #SectorsApp"
 
 
-def _becoming_caption(e):
+def _becoming_caption(e, df=None, summarizer=None):
     sym = str(e.get("base_symbol") or e.get("symbol") or "").upper()
     holder = e.get("holder_name") or "An insider"
-    return f":star2: *{holder} crossed 5% ownership in {sym}*\n\n{_TAGS} #InsiderTrading #SectorsApp"
+    title = f":star2: *{holder} crossed 5% ownership in {sym}*"
+
+    insight = None
+    if summarizer is not None and df is not None:
+        try:
+            excerpts = _pattern_filing_excerpts(
+                df, e.get("symbol"), [holder],
+                window_start=e.get("first_date"), window_end=e.get("cross_date"),
+            )
+            counterparty = _find_counterparty_filing(
+                df, e.get("symbol"), e.get("cross_date"), e.get("cross_shares"), holder,
+            )
+            news_articles = fetch_news_for_symbol(sym, since=e.get("first_date"))
+            insight = summarizer.generate_becoming_insider_caption(e, excerpts, counterparty, news_articles)
+        except Exception as error:
+            print(f"Becoming-insider caption LLM failed for {sym}: {error}")
+
+    body = f"\n\n{insight}" if insight else ""
+    return f"{title}{body}\n\n{_TAGS} #InsiderTrading #SectorsApp"
 
 
-def _earnings_caption(s):
+def _earnings_caption(s, summarizer=None):
     sym = str(s.get("base_symbol") or s.get("symbol") or "").upper()
     word = "jumped" if s.get("direction") == "spike" else "fell"
     quarter = str(s.get("latest_quarter") or "").replace("-", " ")  # "Q1-2026" -> "Q1 2026"
@@ -147,7 +344,22 @@ def _earnings_caption(s):
     # State the comparison explicitly (YoY) so the headline can't be misread as QoQ.
     pct = f" {abs(g) * 100:.0f}% YoY" if g is not None else ""
     lead = f"{quarter} net profit {word}{pct}" if quarter else f"quarterly net profit {word}{pct}"
-    return f":zap: *{sym} — {lead}*\n\n{_TAGS} #Earnings #SectorsApp"
+    header = f":zap: *{sym} — {lead}*"
+
+    insight = None
+    if summarizer is not None:
+        try:
+            quarters = s.get("quarters") or []
+            # Cover the whole comparison window so an M&A/dividend/other event
+            # anywhere between the base and latest quarter still gets caught.
+            since = quarters[-5].get("date") if len(quarters) >= 5 else None
+            news_articles = fetch_news_for_symbol(sym, since=since)
+            insight = summarizer.generate_earnings_caption(s, news_articles)
+        except Exception as error:
+            print(f"Earnings caption LLM failed for {sym}: {error}")
+
+    body = f"\n\n{insight}" if insight else ""
+    return f"{header}{body}\n\n{_TAGS} #Earnings #SectorsApp"
 
 
 def load_input(args, kind):
@@ -178,8 +390,20 @@ def generate(args):
     except Exception as e:
         print(f"Warning: Could not fetch company profiles: {e}")
         renderer.company_profiles = {}
-        
+
     paths = []
+
+    def _queue(base_content_type, image_paths, caption, content_type=None):
+        # --dry-run means "render locally, touch nothing external" - the
+        # DB/Storage queue counts as external the same way Slack does, so
+        # skip it here rather than at each call site.
+        if args.dry_run:
+            return
+        try:
+            scheduled_at = scheduled_at_for(base_content_type)
+            queue_post(base_content_type, image_paths, caption, content_type=content_type, scheduled_at=scheduled_at)
+        except Exception as error:
+            print(f"Queue write failed for {content_type or base_content_type}: {error}")
 
     if args.mode in {"earnings-spike-dark", "earnings-drop-dark"}:
         direction = "drop" if args.mode == "earnings-drop-dark" else "spike"
@@ -199,6 +423,13 @@ def generate(args):
         df = load_input(args, "filings")
         df = drop_mixed_leg_filings(df)  # corrupt netted filings out of BOTH feeds
         patterns = group_insider_clusters(df) + group_insider_chains(df)
+
+        try:
+            summarizer = NewsSummarizer()
+        except Exception as error:
+            print(f"LLM insider caption disabled (summarizer init failed): {error}")
+            summarizer = None
+
         state_path = Path(args.state_path) if args.state_path else triggers.DEFAULT_STATE_PATH
         state = triggers.load_state(state_path)
         run_date = args.run_date or datetime.now().strftime("%Y-%m-%d")
@@ -237,7 +468,13 @@ def generate(args):
                     print(f"Render failed for signal {p['kind']} {p.get('base_symbol')}/{p.get('direction')}: {e}")
                     continue
                 rendered.append((p, rp))
-                _extend_captioned(paths, rp, _insider_caption(p, "signal"))
+                caption = _insider_caption(p, "signal", df, summarizer)
+                _extend_captioned(paths, rp, caption)
+                ident = clean_slug(p.get("base_symbol") or p.get("holder_name"))
+                _queue(
+                    "filings-signal", rp, caption,
+                    content_type=f"filings-signal-{p['kind']}-{ident}-{p.get('direction')}",
+                )
         else:  # filings-story
             def _price_fetcher(symbol, completed):
                 since = (completed - timedelta(days=14)).strftime("%Y-%m-%d")
@@ -267,7 +504,13 @@ def generate(args):
                     print(f"Render failed for story {p['kind']} {p.get('base_symbol')}/{p.get('direction')}: {e}")
                     continue
                 rendered.append((p, rp))
-                _extend_captioned(paths, rp, _insider_caption(p, "story"))
+                caption = _insider_caption(p, "story", df, summarizer)
+                _extend_captioned(paths, rp, caption)
+                ident = clean_slug(p.get("base_symbol") or p.get("holder_name"))
+                _queue(
+                    "filings-story", rp, caption,
+                    content_type=f"filings-story-{p['kind']}-{ident}-{p.get('direction')}",
+                )
 
         if args.dry_run:
             print(f"[dry-run] {len(paths)} image(s) generated; state NOT updated")
@@ -306,6 +549,13 @@ def generate(args):
         df = load_input(args, "filings")
         df = drop_mixed_leg_filings(df)
         events = group_becoming_insider(df)
+
+        try:
+            summarizer = NewsSummarizer()
+        except Exception as error:
+            print(f"LLM becoming-insider caption disabled (summarizer init failed): {error}")
+            summarizer = None
+
         state_path = Path(args.state_path) if args.state_path else triggers.BECOMING_STATE_PATH
         state = triggers.load_becoming_state(state_path)
         run_date = args.run_date or datetime.now().strftime("%Y-%m-%d")
@@ -324,7 +574,12 @@ def generate(args):
                 print(f"Render failed for becoming {e.get('base_symbol')}/{e.get('holder_name')}: {ex}")
                 continue
             rendered.append((e, rp))
-            _extend_captioned(paths, rp, _becoming_caption(e))
+            caption = _becoming_caption(e, df, summarizer)
+            _extend_captioned(paths, rp, caption)
+            _queue(
+                "filings-becoming", rp, caption,
+                content_type=f"filings-becoming-{clean_slug(e.get('base_symbol'))}-{clean_slug(e.get('holder_name'))}",
+            )
 
         if args.dry_run:
             print(f"[dry-run] {len(paths)} image(s) generated; state NOT updated")
@@ -344,6 +599,12 @@ def generate(args):
         # Standalone earnings feed: spikes AND drops in one pass, deduped on
         # (symbol, quarter, direction), recency-gated to the current season.
         from . import triggers
+
+        try:
+            summarizer = NewsSummarizer()
+        except Exception as error:
+            print(f"LLM earnings caption disabled (summarizer init failed): {error}")
+            summarizer = None
 
         df = fetch_company_report_earnings()
         spikes = select_earnings_spikes(df, direction="spike")
@@ -366,7 +627,12 @@ def generate(args):
                 print(f"Render failed for earnings {s.get('base_symbol')}/{s.get('direction')}: {ex}")
                 continue
             rendered.append((s, rp))
-            _extend_captioned(paths, rp, _earnings_caption(s))
+            caption = _earnings_caption(s, summarizer)
+            _extend_captioned(paths, rp, caption)
+            _queue(
+                "earnings-report", rp, caption,
+                content_type=f"earnings-report-{clean_slug(s.get('base_symbol'))}-{s.get('direction')}",
+            )
 
         if args.dry_run:
             print(f"[dry-run] {len(paths)} image(s) generated; state NOT updated")
@@ -401,7 +667,9 @@ def generate(args):
                 filing_day_label = (run_day - timedelta(days=1)).strftime("%d %B %Y")
                 caption = (f":memo: *Daily insider filings — {filing_day_label}*\n\n"
                            f"{_TAGS} #InsiderTrading #SectorsApp")
-                paths.append((renderer.render_daily_filings(rows, filing_day_label), caption))
+                plain_path = renderer.render_daily_filings(rows, filing_day_label)
+                paths.append((plain_path, caption))
+                _queue("filings-plain", plain_path, caption)
             else:
                 print("No plain filings for yesterday — nothing to post.")
         elif args.mode == "filings-daily":
@@ -415,13 +683,28 @@ def generate(args):
                 title = row.get("title") or "Filing Transaction"
                 print(f"Summarizing context for: {title[:50]}...")
                 row["title_summarized"] = summarizer.summarize_filing_context(title)
-            paths.append(renderer.render_daily_filings(rows, date_label(args.date_label)))
+            daily_label = date_label(args.date_label)
+            daily_path = renderer.render_daily_filings(rows, daily_label)
+            paths.append(daily_path)
+            if rows:
+                daily_caption = (f":memo: *Daily insider filings — {daily_label}*\n\n"
+                                  f"{_TAGS} #InsiderTrading #SectorsApp")
+                _queue("filings-daily", daily_path, daily_caption)
         elif args.mode == "filings-context":
             rows = group_context_filings(df)
             if args.limit:
                 rows = rows[: args.limit]
             for group in rows:
-                paths.append(renderer.render_context_filing(group))
+                context_path = renderer.render_context_filing(group)
+                paths.append(context_path)
+                context_caption = (
+                    f":memo: *{group.get('symbol')} — {group.get('context_pattern') or 'Context'}* "
+                    f"({group.get('count')} filing(s))\n\n{_TAGS} #InsiderTrading #SectorsApp"
+                )
+                _queue(
+                    "filings-context", context_path, context_caption,
+                    content_type=f"filings-context-{clean_slug(group.get('symbol'))}-{clean_slug(group.get('context_pattern'))}",
+                )
         elif args.mode == "filings-cluster-dark":
             clusters = group_insider_clusters(df)
             if args.limit: clusters = clusters[:args.limit]
@@ -465,7 +748,19 @@ def generate(args):
             if args.limit:
                 rows = rows[: args.limit]
             for filing in rows:
-                paths.append(renderer.render_tagged_filing(filing))
+                tagged_path = renderer.render_tagged_filing(filing)
+                paths.append(tagged_path)
+                tags = normalize_tags(filing.get("tags_parsed") or [])
+                important = next((t for t in tags if t.lower() in {"takeover", "mesop"}), tags[0] if tags else "Important Filing")
+                title = filing.get("headline") or filing.get("title") or "Important Filing"
+                tagged_caption = (
+                    f":memo: *{important.upper()} — {filing.get('symbol') or ''}*\n\n{title}\n\n"
+                    f"{_TAGS} #InsiderTrading #SectorsApp"
+                )
+                _queue(
+                    "filings-tags", tagged_path, tagged_caption,
+                    content_type=f"filings-tags-{clean_slug(filing.get('symbol'))}-{clean_slug(important)}",
+                )
 
     if args.mode == "broker-bandar":
         if args.input:
@@ -500,6 +795,7 @@ def generate(args):
                 "#IDX #StockMarket #Indonesia #BrokerActivity #SectorsApp"
             )
             paths.append((path, caption))
+            _queue("broker-bandar", path, caption)
         else:
             print("No broker rows to render.")
 
@@ -524,6 +820,7 @@ def generate(args):
                     "#IDX #StockMarket #Indonesia #BrokerActivity #SectorsApp"
                 )
                 paths.append((path, caption))
+                _queue("broker-trending", path, caption)
             else:
                 print("No trending-mover data to render.")
 
@@ -561,6 +858,7 @@ def generate(args):
                     "#IDX #StockMarket #Indonesia #BrokerActivity #SectorsApp"
                 )
                 paths.append((path, caption))
+                _queue("broker-weekly", path, caption)
             else:
                 print("No weekly recap data to render.")
 
@@ -596,6 +894,7 @@ def generate(args):
                         "#IDX #StockMarket #Indonesia #BrokerFlow #SectorsApp"
                     )
                     paths.append((path, caption))
+                    _queue("weekly-accumulation", path, caption)
                 else:
                     print("No accumulation data to render.")
 
@@ -610,6 +909,7 @@ def generate(args):
                         "#IDX #StockMarket #Indonesia #BrokerFlow #SectorsApp"
                     )
                     paths.append((path, caption))
+                    _queue("weekly-distribution", path, caption)
                 else:
                     print("No distribution data to render.")
 
@@ -624,6 +924,7 @@ def generate(args):
                         "#IDX #StockMarket #Indonesia #BrokerActivity #SectorsApp"
                     )
                     paths.append((path, caption))
+                    _queue("weekly-bandar", path, caption)
                 else:
                     print("No bandar plays to render.")
 
@@ -645,13 +946,19 @@ def generate(args):
                     "#IDX #StockMarket #Indonesia #Investing #FinancialData #SectorsApp"
                 )
                 paths.append((path, caption))
+                _queue("news-tier1", path, caption)
             else:
                 print("No Tier 1 news in window; skipping digest.")
         elif args.mode == "news-tier2":
             rows = df[df["tier"] == "Tier 2"].to_dict("records")
             if args.limit:
                 rows = rows[: args.limit]
-            paths.append(renderer.render_tier2_news_summary(rows, date_label(args.date_label)))
+            tier2_label = date_label(args.date_label)
+            tier2_path = renderer.render_tier2_news_summary(rows, tier2_label)
+            paths.append(tier2_path)
+            if rows:
+                tier2_caption = f":memo: *Tier 2 IDX News — {tier2_label}*\n\n{_TAGS} #SectorsApp"
+                _queue("news-tier2", tier2_path, tier2_caption)
 
     if args.max_posts and len(paths) > args.max_posts:
         print(f"Capping output at {args.max_posts} posts (would have been {len(paths)})")

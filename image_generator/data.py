@@ -137,6 +137,56 @@ def fetch_news(since=None):
     return _select_existing_columns(df, NEWS_COLUMNS)
 
 
+def fetch_news_for_symbol(symbol, since=None, limit=8):
+    """Real news mentioning one ticker, for grounding LLM commentary in actual
+    events (named entities, figures, management statements) instead of letting
+    it invent plausible-sounding causes for an earnings move.
+
+    `symbol` may be given with or without the ".JK" suffix. Matched against the
+    `symbol`/`ticker` columns and the `tickers` column, which may be a plain
+    string, a "['A', 'B']"-style string, or an actual list.
+    """
+    import ast
+
+    base = str(symbol).upper().split(".")[0]
+    df = fetch_news(since=since)
+    if df is None or df.empty:
+        return []
+
+    def _tickers_list(value):
+        if isinstance(value, list):
+            return value
+        if isinstance(value, str) and value.strip().startswith("["):
+            try:
+                parsed = ast.literal_eval(value)
+                return parsed if isinstance(parsed, list) else [value]
+            except (ValueError, SyntaxError):
+                return [value]
+        return [value] if value else []
+
+    def _mentions(row):
+        for col in ("symbol", "ticker"):
+            value = row.get(col)
+            if value and base == str(value).upper().split(".")[0]:
+                return True
+        return any(
+            base == str(t).upper().split(".")[0]
+            for t in _tickers_list(row.get("tickers"))
+        )
+
+    matched = [row for row in df.to_dict("records") if _mentions(row)]
+    # Single-company articles carry far more usable detail per excerpt than a
+    # multi-issuer roundup that only mentions this ticker in passing - rank
+    # those first so truncation doesn't cut the actually-relevant part, then
+    # newest first within the same specificity.
+    matched.sort(
+        key=lambda row: (len(_tickers_list(row.get("tickers"))) or 1, row.get("created_at") or ""),
+        reverse=True,
+    )
+    matched.sort(key=lambda row: len(_tickers_list(row.get("tickers"))) or 1)
+    return matched[:limit]
+
+
 def fetch_daily_prices(symbol, since=None, until=None):
     """Daily close prices for one symbol, ascending by date. Used for cluster charts."""
     def modifier(query):
@@ -1375,7 +1425,12 @@ def fetch_weekly_insider_aggregates(window_days: int = 7, top_n: int = 5):
     }
 
 
-def fetch_macro_news(th_score: int = 80):
+def fetch_macro_news(th_score: int = 80, since: datetime | None = None):
+    """Market-wide macro news (rate/FX/inflation/global-economy tagged, no
+    ticker attached). Defaults to today only (the daily macro-news post);
+    pass `since` for a wider grounding window, e.g. the companies-mover
+    caption pulling a whole month of macro context.
+    """
     macro_tags = [
         "Central Bank",
         "Currency & FX",
@@ -1389,7 +1444,7 @@ def fetch_macro_news(th_score: int = 80):
 
     tags_array = "{" + ",".join(macro_tags) + "}"
 
-    today_start = datetime.now(timezone.utc).replace(
+    since = since or datetime.now(timezone.utc).replace(
         hour=0, minute=0, second=0, microsecond=0
     )
 
@@ -1400,7 +1455,7 @@ def fetch_macro_news(th_score: int = 80):
             .filter("tags", "ov", tags_array)
             .filter("tickers", "eq", "{}")
             .filter("score", "gt", th_score)
-            .gte("timestamp", today_start.isoformat())
+            .gte("timestamp", since.isoformat())
         ),
     ).to_dict(orient="records")
 

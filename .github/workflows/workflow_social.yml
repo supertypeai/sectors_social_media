@@ -28,6 +28,11 @@ on:
         required: false
         default: '7'
 
+      target_indices:
+        description: 'stock-performance mode only: comma-separated indices, e.g. "LQ45" or "LQ45,JII70". Empty = all three (LQ45, JII70, IDXBUMN20).'
+        required: false
+        default: ''
+
 jobs:
   generate_and_post:
     runs-on: ubuntu-latest
@@ -56,6 +61,7 @@ jobs:
           echo "mode=${{ github.event.inputs.mode }}" >> "$GITHUB_OUTPUT"
           echo "channel=${{ github.event.inputs.channel || 'C04RC79U5NK' }}" >> "$GITHUB_OUTPUT"
           echo "day=${{ github.event.inputs.day || '7' }}" >> "$GITHUB_OUTPUT"
+          echo "target_indices=${{ github.event.inputs.target_indices }}" >> "$GITHUB_OUTPUT"
 
       - name: Run Workflow Social Image Generator
         env:
@@ -66,11 +72,20 @@ jobs:
           GEMINI_API_KEY2: ${{ secrets.GEMINI_API_KEY2 }}
           GEMINI_API_KEY3: ${{ secrets.GEMINI_API_KEY3 }}
         run: |
-          echo "Running mode=${{ steps.resolve_mode.outputs.mode }} channel=${{ steps.resolve_mode.outputs.channel }} day=${{ steps.resolve_mode.outputs.day }}"
+          echo "Running mode=${{ steps.resolve_mode.outputs.mode }} channel=${{ steps.resolve_mode.outputs.channel }} day=${{ steps.resolve_mode.outputs.day }} target_indices=${{ steps.resolve_mode.outputs.target_indices }}"
           if [ "${{ steps.resolve_mode.outputs.mode }}" = "stock-performance" ]; then
+            TARGET_ARGS=()
+            RAW_TARGETS="${{ steps.resolve_mode.outputs.target_indices }}"
+            if [ -n "$RAW_TARGETS" ]; then
+              IFS=',' read -ra IDX_ARR <<< "$RAW_TARGETS"
+              for idx in "${IDX_ARR[@]}"; do
+                TARGET_ARGS+=(--target-indices "$idx")
+              done
+            fi
             python -m image_generator.workflow_cli "${{ steps.resolve_mode.outputs.mode }}" \
               --slack-channel "${{ steps.resolve_mode.outputs.channel }}" \
-              --day "${{ steps.resolve_mode.outputs.day }}"
+              --day "${{ steps.resolve_mode.outputs.day }}" \
+              "${TARGET_ARGS[@]}"
           else
             python -m image_generator.workflow_cli "${{ steps.resolve_mode.outputs.mode }}" \
               --slack-channel "${{ steps.resolve_mode.outputs.channel }}"

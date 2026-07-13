@@ -1,0 +1,41 @@
+name: Refresh IG/Threads Access Tokens
+
+# Monthly long-lived-token refresh. Unlike the other workflows in this repo,
+# this uses GH Actions' own native cron — the documented 5h+ drift elsewhere
+# doesn't matter here since tokens are valid ~60 days, so running a few hours
+# late is harmless. Persisting the refreshed token back to the IG_ACCESS_TOKEN
+# / THREADS_ACCESS_TOKEN secrets requires GH_PAT: a PAT with repo
+# "secrets: write" permission — the default GITHUB_TOKEN cannot write secrets.
+# Without GH_PAT set, refresh_token.py still runs but only prints the new
+# token instead of saving it.
+
+on:
+  schedule:
+    - cron: '0 3 1 * *'  # 03:00 UTC on the 1st of every month
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Refresh tokens
+        env:
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: python -m image_generator.refresh_token
