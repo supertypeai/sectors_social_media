@@ -1296,6 +1296,26 @@ class NewsSummarizer:
             print(f"OpenAI failed for companies-mover caption: {date_range}")
         return text
 
+    def paraphrase_caption(self, caption: str) -> str | None:
+        """Reword an existing (IG) caption for a Threads crosspost of the
+        same content, so the two platforms don't show verbatim-identical
+        text. Preserves every fact/number as-is - this only varies phrasing,
+        it never adds claims the source caption didn't already make.
+        """
+        system_prompt = (
+            "You rewrite social media captions for a second platform (Threads) "
+            "where the same content is being cross-posted from Instagram. "
+            "Reword the caption so it reads naturally different from the "
+            "original - vary sentence structure and word choice - while "
+            "preserving every fact, number, and name exactly as given. Do "
+            "not invent or add any new information. Do not add hashtags. "
+            "Keep roughly the same length. Return only the reworded caption."
+        )
+        text = self._openai_complete(system_prompt, f"Original caption:\n\n{caption}")
+        if text is None:
+            print("OpenAI failed for caption paraphrase")
+        return text
+
     def generate_becoming_insider_caption(
         self,
         event: dict,

@@ -45,7 +45,7 @@ from .data import (
 from .utils.slack import upload_posts_to_slack
 from .render import SocialImageRenderer, clean_slug, normalize_tags
 from .summarizer import NewsSummarizer
-from .social_queue import queue_post
+from .social_queue import queue_post, crosspost_to_threads
 from .post_routing import scheduled_at_for
 
 
@@ -336,6 +336,34 @@ def _becoming_caption(e, df=None, summarizer=None):
     return f"{title}{body}\n\n{_TAGS} #InsiderTrading #SectorsApp"
 
 
+def _todays_broker_bandar_images():
+    """Look up today's already-queued broker-bandar IG row so broker-trending
+    (which always runs right after it, in the same broker_social.yml job's
+    `for MODE in broker-bandar broker-trending` loop) can combine both into
+    ONE Threads post instead of two separate ones."""
+    from .social_queue import _client, TABLE, parse_image_urls
+
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    try:
+        client = _client()
+        result = (
+            client.table(TABLE)
+            .select("image_url")
+            .eq("platform", "ig")
+            .eq("content_type", "broker-bandar")
+            .gte("created_at", f"{today}T00:00:00")
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+    except Exception as error:
+        print(f"Threads crosspost lookup failed for broker-bandar: {error}")
+        return []
+    if not result.data:
+        return []
+    return parse_image_urls(result.data[0].get("image_url"))
+
+
 def _earnings_caption(s, summarizer=None):
     sym = str(s.get("base_symbol") or s.get("symbol") or "").upper()
     word = "jumped" if s.get("direction") == "spike" else "fell"
@@ -398,12 +426,24 @@ def generate(args):
         # DB/Storage queue counts as external the same way Slack does, so
         # skip it here rather than at each call site.
         if args.dry_run:
-            return
+            return None
         try:
             scheduled_at = scheduled_at_for(base_content_type)
-            queue_post(base_content_type, image_paths, caption, content_type=content_type, scheduled_at=scheduled_at)
+            return queue_post(base_content_type, image_paths, caption, content_type=content_type, scheduled_at=scheduled_at)
         except Exception as error:
             print(f"Queue write failed for {content_type or base_content_type}: {error}")
+            return None
+
+    def _crosspost(base_content_type, row, caption, summarizer=None):
+        # Reuses the IG row's already-uploaded image_url(s) - never
+        # re-renders or re-uploads. No-op if _queue returned None (dry-run,
+        # queue failure, or the content type has no Threads policy at all).
+        if args.dry_run or not row:
+            return
+        try:
+            crosspost_to_threads(base_content_type, row.get("image_url") or [], caption, summarizer=summarizer)
+        except Exception as error:
+            print(f"Threads crosspost failed for {base_content_type}: {error}")
 
     if args.mode in {"earnings-spike-dark", "earnings-drop-dark"}:
         direction = "drop" if args.mode == "earnings-drop-dark" else "spike"
@@ -436,8 +476,12 @@ def generate(args):
         carousel_cap = max(1, (args.max_posts or 4) // 2)  # 2 slides per carousel
 
         # Keep each carousel's paths together so we can persist state ONLY for
-        rendered = []  
+        rendered = []
         dropped = []   # same (symbol, direction) runners-up suppressed this run
+        # Only populated (and only crossposted) on the filings-signal branch -
+        # filings-story has no Threads policy at all.
+        crosspost_image_urls = []
+        crosspost_captions = []
         if args.mode == "filings-signal":
             # Cross (holder rotation) rides the SIGNAL feed only — never the story
             # feed, where a mixed-direction basket's "return since" is ambiguous.
@@ -471,10 +515,13 @@ def generate(args):
                 caption = _insider_caption(p, "signal", df, summarizer)
                 _extend_captioned(paths, rp, caption)
                 ident = clean_slug(p.get("base_symbol") or p.get("holder_name"))
-                _queue(
+                row = _queue(
                     "filings-signal", rp, caption,
                     content_type=f"filings-signal-{p['kind']}-{ident}-{p.get('direction')}",
                 )
+                if row:
+                    crosspost_image_urls.extend(row.get("image_url") or [])
+                    crosspost_captions.append(caption)
         else:  # filings-story
             def _price_fetcher(symbol, completed):
                 since = (completed - timedelta(days=14)).strftime("%Y-%m-%d")
@@ -517,6 +564,16 @@ def generate(args):
             for item in paths:
                 print(f"[dry-run] {Path(item[0] if isinstance(item, tuple) else item).resolve()}")
             return
+
+        # One combined Threads carousel for the whole run - see the
+        # earnings-report crosspost for the same pattern/reasoning. No-op for
+        # filings-story (crosspost_image_urls stays empty on that branch).
+        if crosspost_image_urls:
+            try:
+                joined_caption = "\n\n".join(crosspost_captions)
+                crosspost_to_threads("filings-signal", crosspost_image_urls, joined_caption, summarizer=summarizer)
+            except Exception as error:
+                print(f"Threads crosspost failed for filings-signal: {error}")
 
         uploaded = set(upload_posts_to_slack(paths, slack_channel=args.slack_channel)) if paths else set()
         # A carousel counts as posted only if EVERY one of its slides uploaded.
@@ -567,6 +624,8 @@ def generate(args):
         selections = fires[:carousel_cap]
         print(f"Becoming-insider feed: {len(fires)} fresh crossing(s); posting {len(selections)}")
         rendered = []
+        crosspost_image_urls = []
+        crosspost_captions = []
         for e in selections:
             try:
                 rp = renderer.render_becoming_insider_dark(e)
@@ -576,16 +635,28 @@ def generate(args):
             rendered.append((e, rp))
             caption = _becoming_caption(e, df, summarizer)
             _extend_captioned(paths, rp, caption)
-            _queue(
+            row = _queue(
                 "filings-becoming", rp, caption,
                 content_type=f"filings-becoming-{clean_slug(e.get('base_symbol'))}-{clean_slug(e.get('holder_name'))}",
             )
+            if row:
+                crosspost_image_urls.extend(row.get("image_url") or [])
+                crosspost_captions.append(caption)
 
         if args.dry_run:
             print(f"[dry-run] {len(paths)} image(s) generated; state NOT updated")
             for item in paths:
                 print(f"[dry-run] {Path(item[0] if isinstance(item, tuple) else item).resolve()}")
             return
+
+        # One combined Threads carousel for the whole run - see the
+        # earnings-report crosspost above for the same pattern/reasoning.
+        if crosspost_image_urls:
+            try:
+                joined_caption = "\n\n".join(crosspost_captions)
+                crosspost_to_threads("filings-becoming", crosspost_image_urls, joined_caption, summarizer=summarizer)
+            except Exception as error:
+                print(f"Threads crosspost failed for filings-becoming: {error}")
 
         uploaded = set(upload_posts_to_slack(paths, slack_channel=args.slack_channel)) if paths else set()
         posted = [(e, rp) for (e, rp) in rendered if rp and all(s in uploaded for s in rp)]
@@ -620,6 +691,8 @@ def generate(args):
         selections = fires[:carousel_cap]
         print(f"Earnings feed: {len(fires)} unposted report(s); posting {len(selections)}")
         rendered = []
+        crosspost_image_urls = []
+        crosspost_captions = []
         for s in selections:
             try:
                 rp = renderer.render_earnings_spike_dark(s)
@@ -629,16 +702,30 @@ def generate(args):
             rendered.append((s, rp))
             caption = _earnings_caption(s, summarizer)
             _extend_captioned(paths, rp, caption)
-            _queue(
+            row = _queue(
                 "earnings-report", rp, caption,
                 content_type=f"earnings-report-{clean_slug(s.get('base_symbol'))}-{s.get('direction')}",
             )
+            if row:
+                crosspost_image_urls.extend(row.get("image_url") or [])
+                crosspost_captions.append(caption)
 
         if args.dry_run:
             print(f"[dry-run] {len(paths)} image(s) generated; state NOT updated")
             for item in paths:
                 print(f"[dry-run] {Path(item[0] if isinstance(item, tuple) else item).resolve()}")
             return
+
+        # One combined Threads carousel for the whole run rather than one
+        # crosspost per symbol: all of today's report captions get joined
+        # and paraphrased together into a single caption backing a single
+        # carousel of every report card.
+        if crosspost_image_urls:
+            try:
+                joined_caption = "\n\n".join(crosspost_captions)
+                crosspost_to_threads("earnings-report", crosspost_image_urls, joined_caption, summarizer=summarizer)
+            except Exception as error:
+                print(f"Threads crosspost failed for earnings-report: {error}")
 
         uploaded = set(upload_posts_to_slack(paths, slack_channel=args.slack_channel)) if paths else set()
         posted = [(s, rp) for (s, rp) in rendered if rp and all(p in uploaded for p in rp)]
@@ -669,7 +756,12 @@ def generate(args):
                            f"{_TAGS} #InsiderTrading #SectorsApp")
                 plain_path = renderer.render_daily_filings(rows, filing_day_label)
                 paths.append((plain_path, caption))
-                _queue("filings-plain", plain_path, caption)
+                row = _queue("filings-plain", plain_path, caption)
+                try:
+                    summarizer = NewsSummarizer()
+                except Exception:
+                    summarizer = None
+                _crosspost("filings-plain", row, caption, summarizer=summarizer)
             else:
                 print("No plain filings for yesterday — nothing to post.")
         elif args.mode == "filings-daily":
@@ -820,7 +912,13 @@ def generate(args):
                     "#IDX #StockMarket #Indonesia #BrokerActivity #SectorsApp"
                 )
                 paths.append((path, caption))
-                _queue("broker-trending", path, caption)
+                row = _queue("broker-trending", path, caption)
+                if row and not args.dry_run:
+                    combined_images = _todays_broker_bandar_images() + (row.get("image_url") or [])
+                    try:
+                        crosspost_to_threads("broker-trending", combined_images, None)
+                    except Exception as error:
+                        print(f"Threads crosspost failed for broker-trending: {error}")
             else:
                 print("No trending-mover data to render.")
 
@@ -858,6 +956,9 @@ def generate(args):
                     "#IDX #StockMarket #Indonesia #BrokerActivity #SectorsApp"
                 )
                 paths.append((path, caption))
+                # No individual Threads crosspost here - broker-weekly's
+                # images get folded into foreign-flow's combined "Weekly
+                # Update" post the next morning (see workflow_cli.foreign_flow()).
                 _queue("broker-weekly", path, caption)
             else:
                 print("No weekly recap data to render.")
@@ -946,6 +1047,9 @@ def generate(args):
                     "#IDX #StockMarket #Indonesia #Investing #FinancialData #SectorsApp"
                 )
                 paths.append((path, caption))
+                # No individual Threads crosspost here - news-tier1's images
+                # get folded into agm's combined "Daily News & AGM Update"
+                # post later the same day (see workflow_cli.agm()).
                 _queue("news-tier1", path, caption)
             else:
                 print("No Tier 1 news in window; skipping digest.")

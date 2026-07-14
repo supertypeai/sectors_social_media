@@ -66,6 +66,9 @@ def _log(level, message, **fields):
 
 
 # ── queue access ──────────────────────────────────────────────────────────────
+_PLATFORM_PRIORITY = {"ig": 0, "threads": 1}
+
+
 def _fetch_due_rows(client):
     """Pending rows whose scheduled_at has passed, PLUS any row stuck in
     'publishing' - the only way a row is in 'publishing' when we start is a
@@ -74,6 +77,11 @@ def _fetch_due_rows(client):
     picking those back up is the crash-resume path. A GH Actions concurrency
     group (see the workflow) keeps two publisher runs from overlapping and
     racing on the same row.
+
+    Sorted IG-first, then by scheduled_at within each platform - a Threads
+    crosspost and its IG source can land in the same 30-min window with the
+    Threads row's scheduled_at ties or even edges earlier, and IG should
+    never end up waiting behind it.
     """
     now = datetime.now(timezone.utc).isoformat()
     result = (
@@ -84,7 +92,9 @@ def _fetch_due_rows(client):
         .order("scheduled_at", desc=False)
         .execute()
     )
-    return result.data or []
+    rows = result.data or []
+    rows.sort(key=lambda row: (_PLATFORM_PRIORITY.get(row.get("platform"), 99), row.get("scheduled_at") or ""))
+    return rows
 
 
 def _update_row(client, row_id, fields):
@@ -175,7 +185,57 @@ def _publish_ig(client, row):
     return data["id"]
 
 
+def _create_threads_carousel_item(base, token, image_url):
+    resp = requests.post(
+        f"{base}/threads",
+        data={"media_type": "IMAGE", "image_url": image_url, "is_carousel_item": "true", "access_token": token},
+        timeout=REQUEST_TIMEOUT_S,
+    )
+    data = resp.json()
+    if "id" not in data:
+        raise RuntimeError(f"Threads carousel item creation failed: {data}")
+    return data["id"]
+
+
+def _split_for_threads(text, limit=THREADS_MAX_CHARS):
+    """Break `text` into <= limit-char pieces so nothing gets truncated or
+    rejected: prefers cutting at the latest paragraph break (blank line)
+    within the limit, falling back to the latest line break, then the
+    latest space, and only hard-cutting mid-word if the stretch has no
+    break at all. The overflow pieces get posted as chained replies (see
+    _publish_threads) rather than being dropped.
+    """
+    chunks = []
+    remaining = text.strip()
+    while len(remaining) > limit:
+        window = remaining[:limit]
+        cut = window.rfind("\n\n")
+        if cut <= 0:
+            cut = window.rfind("\n")
+        if cut <= 0:
+            cut = window.rfind(" ")
+        if cut <= 0:
+            cut = limit
+        chunks.append(remaining[:cut].rstrip())
+        remaining = remaining[cut:].lstrip()
+    if remaining:
+        chunks.append(remaining)
+    return chunks
+
+
+
+# Manual kill switch for Threads publishing - flip to True to resume. Rows
+# keep queuing normally (crosspost_to_threads still runs) while this is
+# off; they just sit pending until re-enabled, same as the missing-
+# credentials case below.
+THREADS_PUBLISHING_ENABLED = False
+
+
 def _publish_threads(client, row):
+    if not THREADS_PUBLISHING_ENABLED:
+        _log(logging.INFO, "threads publishing suspended, skipping row", row_id=row["id"])
+        return None  # sentinel: caller leaves the row pending, doesn't count an attempt
+
     token = os.getenv("THREADS_ACCESS_TOKEN")
     user_id = os.getenv("THREADS_USER_ID")
     if not token or not user_id:
@@ -183,31 +243,69 @@ def _publish_threads(client, row):
         return None  # sentinel: caller leaves the row pending, doesn't count an attempt
 
     caption = row.get("caption") or ""
-    if len(caption) > THREADS_MAX_CHARS:
-        raise RuntimeError(f"Threads caption exceeds {THREADS_MAX_CHARS} chars ({len(caption)})")
+    chunks = _split_for_threads(caption) or [""]
+    if len(chunks) > 1:
+        _log(logging.INFO, "caption exceeds threads limit, chaining as replies",
+             row_id=row["id"], chars=len(caption), parts=len(chunks))
 
     base = f"{THREADS_BASE}/{user_id}"
     container_id = row.get("container_id")
     image_urls = parse_image_urls(row.get("image_url"))
-    if len(image_urls) > 1:
-        raise RuntimeError(f"Threads posts are single-image only, row has {len(image_urls)}")
+    first_text = chunks[0]
 
     if not container_id:
-        if image_urls:
+        if not image_urls:
+            payload = {"media_type": "TEXT", "text": first_text, "access_token": token}
+            resp = requests.post(f"{base}/threads", data=payload, timeout=REQUEST_TIMEOUT_S)
+            data = resp.json()
+            if "id" not in data:
+                raise RuntimeError(f"Threads container creation failed: {data}")
+            container_id = data["id"]
+
+        elif len(image_urls) == 1:
             payload = {
                 "media_type": "IMAGE",
                 "image_url": image_urls[0],
-                "text": caption,
+                "text": first_text,
                 "access_token": token,
             }
-        else:
-            payload = {"media_type": "TEXT", "text": caption, "access_token": token}
+            resp = requests.post(f"{base}/threads", data=payload, timeout=REQUEST_TIMEOUT_S)
+            data = resp.json()
+            if "id" not in data:
+                raise RuntimeError(f"Threads container creation failed: {data}")
+            container_id = data["id"]
 
-        resp = requests.post(f"{base}/threads", data=payload, timeout=REQUEST_TIMEOUT_S)
-        data = resp.json()
-        if "id" not in data:
-            raise RuntimeError(f"Threads container creation failed: {data}")
-        container_id = data["id"]
+        else:
+            # Carousel: an item container per image (no text on items), then a
+            # parent CAROUSEL container referencing them - same shape as the
+            # IG carousel flow, just on Threads' endpoints. Only the parent id
+            # is persisted, so a crash between item creation and parent
+            # creation means a retry recreates the item containers - harmless,
+            # since unpublished item containers just expire.
+            item_ids = [_create_threads_carousel_item(base, token, url) for url in image_urls]
+            _log(logging.INFO, "threads carousel items created", row_id=row["id"], item_ids=item_ids)
+
+            # Threads item containers need a beat to finish processing before
+            # a parent CAROUSEL container can reference them - skipping this
+            # wait gets "invalid, non-existent or expired" on the later-
+            # created items (confirmed live: 2-image carousel, second item
+            # rejected with no wait).
+            time.sleep(THREADS_CONTAINER_WAIT_S)
+
+            payload = {
+                "media_type": "CAROUSEL",
+                "children": ",".join(item_ids),
+                "text": first_text,
+                "access_token": token,
+            }
+            resp = requests.post(f"{base}/threads", data=payload, timeout=REQUEST_TIMEOUT_S)
+            data = resp.json()
+            if "id" not in data:
+                raise RuntimeError(f"Threads carousel container creation failed: {data}")
+            container_id = data["id"]
+
+        # Persist immediately so a crash before publish resumes here on the
+        # next run instead of creating a duplicate container.
         _update_row(client, row["id"], {"container_id": container_id})
         _log(logging.INFO, "threads container created", row_id=row["id"], container_id=container_id)
     else:
@@ -223,7 +321,42 @@ def _publish_threads(client, row):
     data = resp.json()
     if "id" not in data:
         raise RuntimeError(f"Threads publish failed: {data}")
-    return data["id"]
+    published_id = data["id"]
+
+    # Overflow text (beyond the 500-char limit) chains as text-only replies
+    # to the post that precedes it, so the full caption still reads as one
+    # continuous thread. Not crash-resumable past the main post (a retry
+    # would resume at the main post via container_id above and re-send the
+    # whole reply chain) - acceptable, same "harmless to redo" tradeoff as
+    # the carousel item containers.
+    reply_to_id = published_id
+    for chunk in chunks[1:]:
+        reply_payload = {
+            "media_type": "TEXT",
+            "text": chunk,
+            "reply_to_id": reply_to_id,
+            "access_token": token,
+        }
+        resp = requests.post(f"{base}/threads", data=reply_payload, timeout=REQUEST_TIMEOUT_S)
+        data = resp.json()
+        if "id" not in data:
+            raise RuntimeError(f"Threads reply container creation failed: {data}")
+        reply_container_id = data["id"]
+
+        time.sleep(THREADS_CONTAINER_WAIT_S)
+
+        resp = requests.post(
+            f"{base}/threads_publish",
+            data={"creation_id": reply_container_id, "access_token": token},
+            timeout=REQUEST_TIMEOUT_S,
+        )
+        data = resp.json()
+        if "id" not in data:
+            raise RuntimeError(f"Threads reply publish failed: {data}")
+        reply_to_id = data["id"]
+        _log(logging.INFO, "threads reply published", row_id=row["id"], reply_id=reply_to_id)
+
+    return published_id
 
 
 # ── row processing ───────────────────────────────────────────────────────────

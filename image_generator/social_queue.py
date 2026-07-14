@@ -72,11 +72,9 @@ def _client():
     from supabase import create_client
 
     url = os.getenv("SUPABASE_URL")
-    # Prefer a service-role key if one's ever added (bypasses RLS for writes);
-    # falls back to the anon SUPABASE_KEY already used elsewhere in this repo.
-    key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_KEY")
+    key = os.getenv("SUPABASE_KEY")
     if not url or not key:
-        raise RuntimeError("SUPABASE_URL and SUPABASE_KEY (or SUPABASE_SERVICE_KEY) are required.")
+        raise RuntimeError("SUPABASE_URL and SUPABASE_KEY are required.")
 
     return create_client(url, key)
 
@@ -229,6 +227,55 @@ def queue_post(
         image_url=image_urls,
         caption=caption,
         scheduled_at=scheduled_at,
+    )
+
+
+def crosspost_to_threads(
+    base_content_type: str,
+    image_urls: list[str],
+    caption: str | None,
+    content_type: str | None = None,
+    summarizer=None,
+    scheduled_at: str | None = None,
+) -> dict | None:
+    """Cross-post an already-queued IG post to Threads, reusing its already-
+    uploaded image_url(s) as-is - no new render, no re-upload. See
+    image_generator.threads_routing for which content types this applies to,
+    the caption strategy ('generic' template vs 'paraphrase' of `caption`
+    via summarizer.paraphrase_caption), and the Threads-specific schedule.
+
+    Returns None (no-op, no DB write) when base_content_type has no Threads
+    policy, or when there are no images to attach.
+    """
+    from .threads_routing import generic_caption, policy_for, threads_scheduled_at_for
+
+    policy = policy_for(base_content_type)
+    if policy is None or not image_urls:
+        return None
+
+    # Threads/IG carousels cap out at 10 children - combined multi-item
+    # crossposts (earnings-report, upcoming-dividend, stock-performance)
+    # can exceed that on a busy day, so keep only the first 10.
+    image_urls = image_urls[:10]
+
+    if policy["caption_mode"] == "generic":
+        final_caption = generic_caption(policy["label"])
+    else:
+        final_caption = caption
+        if summarizer is not None and caption:
+            try:
+                final_caption = summarizer.paraphrase_caption(caption) or caption
+            except Exception:
+                final_caption = caption
+
+    slug = content_type or base_content_type
+    return upsert_post(
+        platform="threads",
+        post_type="feed",
+        content_type=f"{slug}-threads",
+        image_url=image_urls,
+        caption=final_caption,
+        scheduled_at=scheduled_at or threads_scheduled_at_for(base_content_type),
     )
 
 

@@ -91,22 +91,18 @@ POST_SCHEDULE_BY_CONTENT_TYPE: dict[str, dict] = {
     "agm": {"target": "same_day", "hour": 19, "minute": 0},
     "macro-news": {"target": "same_day", "hour": 16, "minute": 0},
     "news-tier1": {"target": "same_day", "hour": 13, "minute": 0},
-    "filings-plain": {"target": "same_day", "hour": 20, "minute": 0},
+    "filings-plain": {"target": "same_day", "hour": 8, "minute": 0},
     # Generated Saturday - posts the following Monday, same time-of-day.
     "foreign-flow": {"target": "next_weekday", "weekday": 0, "hour": 9, "minute": 0},
 }
 
 
-def scheduled_at_for(content_type: str, now: datetime | None = None) -> str | None:
-    """Target scheduled_at (ISO 8601, UTC) for a content type per the post-
-    schedule policy above, computed relative to `now` (when the generator
-    actually runs). Returns None when there's no explicit policy, so the
-    caller can fall back to upsert_post's own "now" default.
+def scheduled_at_from_policy(policy: dict, now: datetime | None = None) -> str:
+    """Shared target-date math behind scheduled_at_for - also used by
+    threads_routing.threads_scheduled_at_for, which needs the exact same
+    same_day/next_day/next_weekday semantics but its own schedule table
+    (Threads posts at different times of day than IG for the same content).
     """
-    policy = POST_SCHEDULE_BY_CONTENT_TYPE.get(content_type)
-    if policy is None:
-        return None
-
     now = now or datetime.now(timezone.utc)
     now_wib = now.astimezone(WIB)
 
@@ -125,3 +121,15 @@ def scheduled_at_for(content_type: str, now: datetime | None = None) -> str | No
 
     target_wib = datetime.combine(target_date, time(policy["hour"], policy["minute"]), tzinfo=WIB)
     return target_wib.astimezone(timezone.utc).isoformat()
+
+
+def scheduled_at_for(content_type: str, now: datetime | None = None) -> str | None:
+    """Target scheduled_at (ISO 8601, UTC) for a content type per the post-
+    schedule policy above, computed relative to `now` (when the generator
+    actually runs). Returns None when there's no explicit policy, so the
+    caller can fall back to upsert_post's own "now" default.
+    """
+    policy = POST_SCHEDULE_BY_CONTENT_TYPE.get(content_type)
+    if policy is None:
+        return None
+    return scheduled_at_from_policy(policy, now)
