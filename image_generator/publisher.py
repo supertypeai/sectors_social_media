@@ -228,7 +228,7 @@ def _split_for_threads(text, limit=THREADS_MAX_CHARS):
 # keep queuing normally (crosspost_to_threads still runs) while this is
 # off; they just sit pending until re-enabled, same as the missing-
 # credentials case below.
-THREADS_PUBLISHING_ENABLED = False
+THREADS_PUBLISHING_ENABLED = True
 
 
 def _publish_threads(client, row):
