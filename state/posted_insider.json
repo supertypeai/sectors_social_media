@@ -90,6 +90,12 @@
       "posted_at": "2026-06-26",
       "progress_count": 3
     },
+    "cluster:BJTM:buy": {
+      "completed_date": "2026-07-15",
+      "completing_filing_id": 4134,
+      "posted_at": "2026-07-15",
+      "progress_count": 8
+    },
     "cluster:BYAN:sell": {
       "completed_date": "2026-07-03",
       "completing_filing_id": 3989,
