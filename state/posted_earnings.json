@@ -100,6 +100,11 @@
       "latest_quarter": "Q1-2026",
       "posted_at": "2026-06-15"
     },
+    "earnings:MLPT:Q1-2026:drop": {
+      "earnings_growth": -0.5320120271397761,
+      "latest_quarter": "Q1-2026",
+      "posted_at": "2026-07-16"
+    },
     "earnings:RISE:Q1-2026:spike": {
       "earnings_growth": 4.284928990700254,
       "latest_quarter": "Q1-2026",
