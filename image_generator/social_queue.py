@@ -19,6 +19,14 @@ STORAGE_BUCKET = "social_media_generation"
 VALID_PLATFORMS = {"ig", "threads"}
 VALID_POST_TYPES = {"feed", "story"}
 
+# Meta's real per-platform carousel caps (2026): IG tops out at 10 children,
+# Threads at 20. Exceeding these doesn't get politely rejected per-item - the
+# whole carousel container creation fails, taking down the entire post. A
+# content type that occasionally renders more items than this (volume-spike
+# on a busy day, a combined multi-source Threads crosspost) should lose its
+# overflow items rather than lose the whole post.
+_CAROUSEL_LIMIT = {"ig": 10, "threads": 20}
+
 # Every caption builder in cli.py/workflow_cli.py was written for Slack
 # mrkdwn (:emoji_shortcode: + *bold*), since Slack was the only posting
 # target until now. Neither renders on IG/Threads - they show up as the
@@ -147,6 +155,10 @@ def upsert_post(
     if post_type == "story" and len(image_urls) > 1:
         raise ValueError("post_type='story' supports exactly one image, got multiple")
 
+    carousel_limit = _CAROUSEL_LIMIT[platform]
+    if len(image_urls) > carousel_limit:
+        image_urls = image_urls[:carousel_limit]
+
     scheduled_at = scheduled_at or datetime.now(timezone.utc).isoformat()
     day = date.fromisoformat(scheduled_at[:10])
     day_start = f"{day.isoformat()}T00:00:00"
@@ -253,10 +265,8 @@ def crosspost_to_threads(
     if policy is None or not image_urls:
         return None
 
-    # Threads/IG carousels cap out at 10 children - combined multi-item
-    # crossposts (earnings-report, upcoming-dividend, stock-performance)
-    # can exceed that on a busy day, so keep only the first 10.
-    image_urls = image_urls[:10]
+    # Threads' 20-item carousel cap is enforced centrally in upsert_post()
+    # below, alongside IG's own (lower) 10-item cap.
 
     if policy["caption_mode"] == "generic":
         final_caption = generic_caption(policy["label"])
