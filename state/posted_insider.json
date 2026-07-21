@@ -90,6 +90,12 @@
       "posted_at": "2026-06-29",
       "progress_count": 7
     },
+    "cluster:BCIC:buy": {
+      "completed_date": "2026-07-21",
+      "completing_filing_id": 4190,
+      "posted_at": "2026-07-21",
+      "progress_count": 5
+    },
     "cluster:BIKE:sell": {
       "completed_date": "2026-06-26",
       "completing_filing_id": 3930,
