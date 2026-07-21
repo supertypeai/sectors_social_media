@@ -184,7 +184,8 @@ class VolumeSpikeRenderer(SocialImageRenderer):
         CHT_AX = (CHT_L + 0.095, CHT_B + 0.048, CHT_W - 0.115, CHT_H - 0.088)
 
         # ── figure ────────────────────────────────────────────────────────────
-        fig = plt.figure(figsize=(9, 13), facecolor=BG, dpi=150)
+        # 9 x 11.25 in @ 120 dpi = 1080 x 1350, matching background/volume_spike.png
+        fig = plt.figure(figsize=(9, 11.25), facecolor=BG, dpi=120)
 
         bg_arr = np.array(Image.open(self.background_dir / 'volume_spike.png').convert('RGB'))
         ax_bg = fig.add_axes([0, 0, 1, 1], zorder=0)
@@ -356,7 +357,7 @@ class VolumeSpikeRenderer(SocialImageRenderer):
         sym_v = df_latest_7[df_latest_7['symbol'] == row['symbol']].sort_values('date').reset_index(drop=True)
         fig   = self._render_card(row, sym_v, df_history, compro_df)
         path  = self.output_dir / f'volume_spike_{sym}.png'
-        fig.savefig(str(path), dpi=150, pad_inches=0)
+        fig.savefig(str(path), dpi=120, pad_inches=0)
         plt.close(fig)
         print(f"Saved: {path}")
         return path
