@@ -53,6 +53,26 @@ class ForeignFlowRenderer(SocialImageRenderer):
         out.alpha_composite(ring)
         return out
 
+    def _story_wrap(self, card, H=1920):
+        """Letterbox the finished 1080x1350 (4:5) card into a 1080xH (9:16) story
+        with EQUAL top/bottom padding, extending the background gradient into the
+        pad bands. The gradient is a vertical ramp, so we simply stretch the card's
+        top edge row upward and its bottom edge row downward — seamless, and the
+        card (chart, stats, baked footer) is left completely untouched.
+        """
+        cw, ch = card.size
+        top_pad = (H - ch) // 2
+        bot_pad = H - ch - top_pad
+        story = Image.new("RGBA", (cw, H))
+        if top_pad > 0:
+            story.paste(card.crop((0, 0, cw, 1)).resize((cw, top_pad),
+                                   Image.Resampling.LANCZOS), (0, 0))
+        if bot_pad > 0:
+            story.paste(card.crop((0, ch - 1, cw, ch)).resize((cw, bot_pad),
+                                  Image.Resampling.LANCZOS), (0, top_pad + ch))
+        story.paste(card, (0, top_pad))
+        return story
+
     def _flow_bars_chart(self, rows, accent, title, figsize=(11, 6.4), label_color="#c0c0d0"):
         """One horizontal bar per stock, length = |net foreign IDR|, single
         directional colour, with the ticker's circular logo on each y-tick. A
@@ -124,7 +144,7 @@ class ForeignFlowRenderer(SocialImageRenderer):
         return chart
 
     def _slide(self, rows, side, window, trading_days, page, filename):
-        W, H, M = 1080, 1350, 76
+        W, H, M = 1080, 1350, 76   # 4:5 content card (letterboxed into 9:16 at save)
         HX = M + 32
         is_buy = side == "buy"
         accent = self.BUY if is_buy else self.SELL
@@ -200,7 +220,7 @@ class ForeignFlowRenderer(SocialImageRenderer):
                              "net on " + top_base, self.AMBER)
 
         self._dark_page_dots(draw, W, 1180, page, 2, accent)
-        return self._save(img, filename)
+        return self._save(self._story_wrap(img, 1920), filename)
 
     def render(self, data: dict, filename_prefix: str = "foreign_flow") -> list[Path]:
         window = data.get("window")
