@@ -664,6 +664,7 @@ def macro_news(
     output: Path = typer.Option(Path("output"), "--output", "-o"),
     slack_channel: str | None = typer.Option(None, "--slack-channel"),
     render_scale: float = typer.Option(1.0, "--render-scale"),
+    since: str | None = typer.Option(None, "--since", help="YYYY-MM-DD; defaults to today"),
 ):
     today = datetime.now()
     period_label = f"{today.strftime('%Y-%m-%d')}"
@@ -676,7 +677,8 @@ def macro_news(
         render_scale=render_scale,
     )
 
-    records = fetch_macro_news(th_score=70)
+    since_dt = datetime.strptime(since, "%Y-%m-%d") if since else None
+    records = fetch_macro_news(th_score=80, since=since_dt)
 
     if not records: 
         typer.echo("Skipping macro-news: no records found")
@@ -690,7 +692,7 @@ def macro_news(
 
     slides = []
 
-    for record in records:
+    for record in records[:1]:
         source = tldextract.extract(record['source'])
 
         slide = summarizer.generate_macro_slide(
