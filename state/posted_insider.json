@@ -72,6 +72,12 @@
       "posted_at": "2026-06-22",
       "progress_count": 24
     },
+    "chain:investama jaya tunggal:IMPC:buy": {
+      "completed_date": "2026-07-28",
+      "completing_filing_id": 4265,
+      "posted_at": "2026-07-28",
+      "progress_count": 8
+    },
     "chain:khiat yulisar:HEAL:buy": {
       "completed_date": "2026-06-11",
       "completing_filing_id": 3817,
@@ -148,6 +154,12 @@
       "completed_date": "2026-07-24",
       "completing_filing_id": 4229,
       "posted_at": "2026-07-24",
+      "progress_count": 3
+    },
+    "cluster:IMPC:buy": {
+      "completed_date": "2026-07-28",
+      "completing_filing_id": 4265,
+      "posted_at": "2026-07-28",
       "progress_count": 3
     },
     "cluster:KLBF:buy": {
