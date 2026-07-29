@@ -5,6 +5,28 @@ import json
 
 DIVIDEND_STATE_PATH = Path("state/posted_dividend.json")
 
+THEME_ROTATION_PATH = Path("state/theme_rotation.json")
+THEME_ROTATION_ORDER = ["default", "aurora", "ember", "neon"]
+
+
+def next_rotating_theme(order: list[str] = THEME_ROTATION_ORDER) -> str:
+    path = THEME_ROTATION_PATH
+    idx = 0
+    if path.exists():
+        try:
+            idx = int(json.loads(path.read_text(encoding="utf-8")).get("index", 0))
+        except (ValueError, OSError, TypeError):
+            idx = 0
+    theme = order[idx % len(order)]
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps({"index": (idx + 1) % len(order)}, indent=2), encoding="utf-8"
+        )
+    except OSError:
+        pass
+    return theme
+
 
 def load_dividend_state() -> dict[str, dict]:
     path = DIVIDEND_STATE_PATH

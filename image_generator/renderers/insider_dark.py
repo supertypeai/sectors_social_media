@@ -281,7 +281,8 @@ class InsiderEarningsRendererMixin:
     def _cluster_convergence_chart(self, close_by_date, points, roster, palette, figsize=(11, 3.3),
                                    avg_buy=None, dots_color=None, dots_label=None, show_legend=False,
                                    ylabel=None, face="#ffffff", label_color="#666",
-                                   shade_color=None, marker_edge_color="white"):
+                                   shade_color=None, marker_edge_color="white",
+                                   market_color=None, avg_line_color=None):
         """Market-close line with each insider's trades scattered on top, colored per holder."""
         import io
         from collections import defaultdict
@@ -296,7 +297,7 @@ class InsiderEarningsRendererMixin:
         if len(usable) < 1 and len(closes) < 2:
             return None
 
-        TEAL = "#3288BD"  # market-price line (Spectral blue)
+        TEAL = market_color or "#3288BD"  # market-price line (Spectral blue by default)
         fig, ax = plt.subplots(figsize=figsize)
         fig.patch.set_alpha(0.0)
         ax.set_facecolor("none" if face in (None, "none") else face)
@@ -320,7 +321,7 @@ class InsiderEarningsRendererMixin:
             ax.axvspan(lo, hi, color=shade_color or dots_color or "#5BAA5A", alpha=0.10, zorder=1)
 
         if avg_buy:
-            ax.axhline(avg_buy, color="#5E4FA2", linewidth=1.6, linestyle="--", zorder=1,
+            ax.axhline(avg_buy, color=avg_line_color or "#5E4FA2", linewidth=1.6, linestyle="--", zorder=1,
                        label=f"Avg filing price (IDR {int(avg_buy):,})")
 
         # Dots are colored to match the roster's colored dots (the roster is the key).
@@ -709,7 +710,8 @@ class InsiderEarningsRendererMixin:
         return chart
 
     def _cross_money_bars_chart(self, stocks, figsize=(11, 5.0), face="none",
-                                label_color="#c0c0d0", max_bars=6):
+                                label_color="#c0c0d0", max_bars=6,
+                                buy_color=None, sell_color=None):
         """The cross-stock story chart: one horizontal bar per stock, length = money
         traded, split green=bought / red=sold. Bar length is instantly comparable so
         a non-finance viewer sees breadth (how many stocks), magnitude (how big), and
@@ -721,8 +723,8 @@ class InsiderEarningsRendererMixin:
         import matplotlib.pyplot as plt
         import matplotlib.patches as mpatches
 
-        BUY_COLOR = "#A6D94E"
-        SELL_COLOR = "#F46D43"
+        BUY_COLOR = buy_color or "#A6D94E"
+        SELL_COLOR = sell_color or "#F46D43"
 
         rows = [s for s in stocks if (s.get("value") or 0) > 0][:max_bars]
         if not rows:
@@ -799,12 +801,20 @@ class InsiderEarningsRendererMixin:
             self._insider_bg_cache = base.resize((1080, 1350), Image.Resampling.LANCZOS)
         return self._insider_bg_cache.copy()
 
-    def _idx_fillings_bg(self):
-        """Fresh 1080x1350 copy of the dark IDX Fillings background."""
-        if getattr(self, "_idx_fillings_bg_cache", None) is None:
-            base = Image.open(self.background_dir / "IDX Fillings.png").convert("RGBA")
-            self._idx_fillings_bg_cache = base.resize((1080, 1350), Image.Resampling.LANCZOS)
-        return self._idx_fillings_bg_cache.copy()
+    def _idx_fillings_bg(self, name="IDX Fillings.png"):
+        """Fresh 1080x1350 copy of a dark IDX-Fillings-style background.
+
+        `name` selects the file (per-theme backgrounds share the same layout —
+        just a recolored base + glow). Cached per filename so each theme's bg is
+        loaded/resized only once.
+        """
+        cache = getattr(self, "_idx_fillings_bg_cache", None)
+        if cache is None:
+            cache = self._idx_fillings_bg_cache = {}
+        if name not in cache:
+            base = Image.open(self.background_dir / name).convert("RGBA")
+            cache[name] = base.resize((1080, 1350), Image.Resampling.LANCZOS)
+        return cache[name].copy()
 
     def _page_dots(self, draw, w, y, page, total, accent):
         dot, gap = 14, 12
@@ -1207,7 +1217,8 @@ class InsiderEarningsRendererMixin:
         return y + card_h
 
     def _chain_price_chart_simple(self, close_by_date, points, direction, accent,
-                                   figsize=(11, 4.6), face="none", label_color="#c0c0d0"):
+                                   figsize=(11, 4.6), face="none", label_color="#c0c0d0",
+                                   market_color=None):
         """Slide-1 chain chart: clean market-close line with filing-date dots snapped
         onto the line.  No avg-price dashed line, no per-holder colour coding, no
         multi-legend — just "stock price over time" + "when they bought/sold"."""
@@ -1227,7 +1238,7 @@ class InsiderEarningsRendererMixin:
         if len(closes) < 2:
             return None
 
-        TEAL = "#3288BD"
+        TEAL = market_color or "#3288BD"
         fig, ax = plt.subplots(figsize=figsize)
         fig.patch.set_alpha(0.0)
         ax.set_facecolor("none" if face in (None, "none") else face)
@@ -1573,7 +1584,8 @@ class InsiderEarningsRendererMixin:
 
         return paths
 
-    def render_insider_chain_carousel_dark(self, chain, filename_prefix=None, variant="story", story=None):
+    def render_insider_chain_carousel_dark(self, chain, filename_prefix=None, variant="story", story=None,
+                                           theme="default"):
         """Dark-themed two-slide chain carousel on the IDX Fillings background.
 
         Same data structure as render_insider_chain_carousel; the visual
@@ -1589,9 +1601,11 @@ class InsiderEarningsRendererMixin:
         symbol, base = chain["symbol"], chain["base_symbol"]
         direction = chain["direction"]
         holder = chain["holder_name"]
-        colors = self.IDX_CHAIN_COLORS
+        th = self._insider_theme(theme)
+        colors = th
+        brand = th["brand"]
         accent = colors["buy"] if direction == "buy" else colors["sell"]
-        palette = self.CLUSTER_PALETTE
+        palette = th["palette"]
         verb = "bought" if direction == "buy" else "sold"
         verb_sub = "bought" if direction == "buy" else "sold"
         fd0, fd1 = chain["first_date"], chain["last_date"]
@@ -1604,6 +1618,8 @@ class InsiderEarningsRendererMixin:
         is_signal = variant == "signal"
         prefix_kind = "insider_chain_signal_dark" if is_signal else "insider_chain_dark"
         prefix = filename_prefix or f"{prefix_kind}_{clean_slug(base + '_' + direction)}"
+        if theme and theme != "default":
+            prefix = f"{prefix}_{theme}"
         paths = []
 
         try:
@@ -1672,7 +1688,7 @@ class InsiderEarningsRendererMixin:
 
         def header_panel(draw, image, panel_bottom, subtitle):
             ex, ey = HX, 56
-            x2 = _pill(draw, image, ex, ey, "INSIDER CHAIN", "#F29942")
+            x2 = _pill(draw, image, ex, ey, "INSIDER CHAIN", brand)
             _pill(draw, image, x2 + 16, ey, chain_label, accent, arrow=("up" if direction == "buy" else "down"))
             logo_sz = 62
             self._logo(image, (W - M - 32 - logo_sz, ey + (48 - logo_sz) // 2), base, size=logo_sz, accent=accent)
@@ -1685,7 +1701,7 @@ class InsiderEarningsRendererMixin:
         sy = 1000
 
         # ============ SLIDE 1 — the cadence ============
-        img = self._idx_fillings_bg()
+        img = self._idx_fillings_bg(th["bg"])
         draw = ImageDraw.Draw(img)
 
         max_w = W - 2 * HX
@@ -1730,7 +1746,7 @@ class InsiderEarningsRendererMixin:
 
         chart = self._chain_price_chart_simple(
             close_by_date, points, direction, accent,
-            figsize=(11, 4.6), face="none", label_color=LABEL_COLOR)
+            figsize=(11, 4.6), face="none", label_color=LABEL_COLOR, market_color=th["market_line"])
         chart_y = panel_bottom + 36
         chart_h = (sy - 32) - chart_y
         self._paste_chart(img, chart, M, chart_y, W - 2 * M, chart_h, center_v=True)
@@ -1746,7 +1762,7 @@ class InsiderEarningsRendererMixin:
         paths.append(self._save(img, f"{prefix}_1.png"))
 
         # ============ SLIDE 2 — the position ============
-        img = self._idx_fillings_bg()
+        img = self._idx_fillings_bg(th["bg"])
         draw = ImageDraw.Draw(img)
         header_panel(draw, img, 200, f"{base} · {filing_span}")
 
@@ -1787,7 +1803,7 @@ class InsiderEarningsRendererMixin:
                             colors["avg"]))
         size_anom = chain.get("size_anomaly")
         if size_anom:
-            modules.append(("SIZE", f"{size_anom['mult']:.1f}× typical {direction} (IDR {size_anom['at']})", "#F29942"))
+            modules.append(("SIZE", f"{size_anom['mult']:.1f}× typical {direction} (IDR {size_anom['at']})", brand))
         sig_y = sy2 + 164 + 22
         card_bottom = self._dark_signal_card(draw, img, M, sig_y, W - 2 * M, modules[:2], accent)
 
@@ -1863,7 +1879,8 @@ class InsiderEarningsRendererMixin:
                       font=font("Inter-Italic.ttf", 20), fill="#9090a8")
         return y + card_h
 
-    def render_insider_cluster_carousel_dark(self, cluster, filename_prefix=None, variant="story", story=None):
+    def render_insider_cluster_carousel_dark(self, cluster, filename_prefix=None, variant="story", story=None,
+                                             theme="default"):
         from datetime import datetime, timedelta
         from ..data import fetch_daily_prices
         from PIL import ImageFilter
@@ -1872,9 +1889,11 @@ class InsiderEarningsRendererMixin:
         HX = M + 32
         symbol, base = cluster["symbol"], cluster["base_symbol"]
         direction, roster = cluster["direction"], cluster["roster"]
-        colors = self.IDX_CHAIN_COLORS
+        th = self._insider_theme(theme)
+        colors = th
+        brand = th["brand"]
         accent = colors["buy"] if direction == "buy" else colors["sell"]
-        palette = self.CLUSTER_PALETTE
+        palette = th["palette"]
         verb = "bought" if direction == "buy" else "sold"
         filing_count = cluster.get("filing_count") or len(cluster.get("points") or [])
         fd0, fd1 = cluster["first_date"], cluster["last_date"]
@@ -1885,6 +1904,8 @@ class InsiderEarningsRendererMixin:
         is_signal = variant == "signal"
         prefix_kind = "insider_cluster_signal_dark" if is_signal else "insider_cluster_dark"
         prefix = filename_prefix or f"{prefix_kind}_{clean_slug(base + '_' + direction)}"
+        if theme and theme != "default":
+            prefix = f"{prefix}_{theme}"
         paths = []
 
         try:
@@ -1953,7 +1974,7 @@ class InsiderEarningsRendererMixin:
 
         def header_panel(draw, image, panel_bottom, subtitle):
             ex, ey = HX, 56
-            x2 = _pill(draw, image, ex, ey, "INSIDER TRADING", "#F29942")
+            x2 = _pill(draw, image, ex, ey, "INSIDER TRADING", brand)
             _pill(draw, image, x2 + 16, ey, cluster_label, accent, arrow=("up" if direction == "buy" else "down"))
             logo_sz = 62
             self._logo(image, (W - M - 32 - logo_sz, ey + (48 - logo_sz) // 2), base, size=logo_sz, accent=accent)
@@ -1966,7 +1987,7 @@ class InsiderEarningsRendererMixin:
         buyers = "buyers" if direction == "buy" else "sellers"
         sy = 1000
 
-        img = self._idx_fillings_bg()
+        img = self._idx_fillings_bg(th["bg"])
         draw = ImageDraw.Draw(img)
 
         max_w = W - 2 * HX
@@ -2014,7 +2035,7 @@ class InsiderEarningsRendererMixin:
             close_by_date, points, roster, palette, figsize=(11, 4.6), avg_buy=avg_buy,
             dots_label=f"Insider avg {direction}", show_legend=True, ylabel="AVG BUY PRICE (IDR)" if direction == "buy" else "AVG SELL PRICE (IDR)",
             face="none", label_color=LABEL_COLOR, shade_color=accent,
-            marker_edge_color=None)
+            marker_edge_color=None, market_color=th["market_line"], avg_line_color=th["avg_line"])
         chart_y = panel_bottom + 36
         chart_h = (sy - 32) - chart_y
         self._paste_chart(img, chart, M, chart_y, W - 2 * M, chart_h, center_v=True)
@@ -2022,11 +2043,11 @@ class InsiderEarningsRendererMixin:
         self._dark_stat_card(img, draw, M, sy, sw, "INSIDERS", str(cluster["holder_count"]), f"distinct {buyers}", accent)
         self._dark_stat_card(img, draw, M + sw + gap, sy, sw, "COMBINED", f"IDR {compact(total_value)}", "total value", colors["market"])
         self._dark_stat_card(img, draw, M + 2 * (sw + gap), sy, sw, "SHARES", compact(total_shares),
-                             "shares bought" if direction == "buy" else "shares sold", "#F29942")
+                             "shares bought" if direction == "buy" else "shares sold", brand)
         self._dark_page_dots(draw, W, 1180, 0, 2, accent)
         paths.append(self._save(img, f"{prefix}_1.png"))
 
-        img = self._idx_fillings_bg()
+        img = self._idx_fillings_bg(th["bg"])
         draw = ImageDraw.Draw(img)
         header_panel(draw, img, 200, f"{base} · {filing_span}")
 
@@ -2204,7 +2225,7 @@ class InsiderEarningsRendererMixin:
         prefix = filename or f"insider_cross_{clean_slug(holder)}.png"
         return self._save(img, prefix)
 
-    def render_insider_cross_card_dark(self, cross, filename=None):
+    def render_insider_cross_card_dark(self, cross, filename=None, theme="default"):
         """Two-slide cross-stock carousel (one holder active across >=2 stocks).
 
         Slide 1 (the story): who + a plain-English sentence + the money-per-stock
@@ -2216,11 +2237,12 @@ class InsiderEarningsRendererMixin:
         HX = M + 32
         holder = cross["holder_name"]
         stocks = cross["stocks"]
-        accent = "#5E4FA2"
-        colors = self.IDX_CHAIN_COLORS
+        th = self._insider_theme(theme)
+        accent = th["avg_line"]   # cross theme accent (default: Spectral purple)
+        colors = th
         BUY = colors["buy"]
         SELL = colors["sell"]
-        MIX = "#F29942"
+        MIX = th["brand"]
         HEAD_COLOR = "#FFFFFF"
         SUB_COLOR = "#C8C8D8"
         LABEL_COLOR = "#c0c0d0"
@@ -2284,6 +2306,8 @@ class InsiderEarningsRendererMixin:
         flow_bits.append(f"{total_filings} filing{'s' if total_filings != 1 else ''}")
         subline = "  ·  ".join(flow_bits)
         prefix = filename or f"insider_cross_dark_{clean_slug(holder)}"
+        if theme and theme != "default":
+            prefix = f"{prefix}_{theme}"
         paths = []
 
         # --- Fetch return-since-entry for each stock upfront ---
@@ -2325,7 +2349,7 @@ class InsiderEarningsRendererMixin:
 
         def header_block(draw, image):
             ex, ey = HX, 56
-            x2 = _pill(draw, image, ex, ey, "INSIDER", "#F29942")
+            x2 = _pill(draw, image, ex, ey, "INSIDER", MIX)
             _pill(draw, image, x2 + 16, ey, "CROSS STOCKS", accent)
             logo_sz = 56
             lx = W - M - 32 - logo_sz
@@ -2337,7 +2361,7 @@ class InsiderEarningsRendererMixin:
         sw = (W - 2 * M - 2 * gap) // 3
 
         # ====================== SLIDE 1 — STORY + CHART ======================
-        img = self._idx_fillings_bg()
+        img = self._idx_fillings_bg(th["bg"])
         draw = ImageDraw.Draw(img)
         header_block(draw, img)
 
@@ -2353,7 +2377,7 @@ class InsiderEarningsRendererMixin:
 
         sy = 1000
         chart = self._cross_money_bars_chart(stocks, figsize=(11, 5.8), face="none",
-                                             label_color=LABEL_COLOR)
+                                             label_color=LABEL_COLOR, buy_color=BUY, sell_color=SELL)
         chart_y = 312
         self._paste_chart(img, chart, M, chart_y, W - 2 * M, (sy - 32) - chart_y, center_v=True)
 
@@ -2363,14 +2387,14 @@ class InsiderEarningsRendererMixin:
         # only a directional ± metric is ever coloured.
         self._dark_stat_card(img, draw, M, sy, sw, "STOCKS", str(n_sym), "different stocks", accent)
         self._dark_stat_card(img, draw, M + sw + gap, sy, sw, "FILINGS",
-                             str(total_filings), "buy & sell orders", "#F29942")
+                             str(total_filings), "buy & sell orders", MIX)
         self._dark_stat_card(img, draw, M + 2 * (sw + gap), sy, sw, "TOTAL",
                              f"IDR {compact(total_value)}", "value traded", colors["market"])
         self._dark_page_dots(draw, W, 1180, 0, 2, accent)
         paths.append(self._save(img, f"{prefix}_1.png"))
 
         # ====================== SLIDE 2 — THE DETAIL ======================
-        img = self._idx_fillings_bg()
+        img = self._idx_fillings_bg(th["bg"])
         draw = ImageDraw.Draw(img)
         header_block(draw, img)
 
@@ -2530,7 +2554,7 @@ class InsiderEarningsRendererMixin:
                                  f"IDR {compact(top_stock['value'])}", accent)
         else:
             self._dark_stat_card(img, draw, M, sy2, sw, "STOCKS", str(n_sym), "different stocks", accent)
-        self._dark_stat_card(img, draw, M + sw + gap, sy2, sw, "PERIOD", filing_span, "filing dates", "#F29942")
+        self._dark_stat_card(img, draw, M + sw + gap, sy2, sw, "PERIOD", filing_span, "filing dates", MIX)
         self._dark_stat_card(img, draw, M + 2 * (sw + gap), sy2, sw, "TOTAL",
                              f"IDR {compact(total_value)}", "value traded", colors["market"])
         # CTA only for a short list (<=3 stocks); a full list (4+) crowds the footer.

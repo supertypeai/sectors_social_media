@@ -43,10 +43,15 @@ from .data import (
     load_records,
 )
 from .utils.slack import upload_posts_to_slack
+from .utils.io_helper import next_rotating_theme
 from .render import SocialImageRenderer, clean_slug, normalize_tags
 from .summarizer import NewsSummarizer
 from .social_queue import queue_post, crosspost_to_threads
 from .post_routing import scheduled_at_for
+
+
+def _resolve_theme(theme):
+    return next_rotating_theme() if theme == "rotate" else theme
 
 
 def date_label(value=None):
@@ -503,11 +508,11 @@ def generate(args):
             for p in selections:
                 try:
                     if p["kind"] == "cluster":
-                        rp = renderer.render_insider_cluster_carousel_dark(p, variant="signal")
+                        rp = renderer.render_insider_cluster_carousel_dark(p, variant="signal", theme=_resolve_theme(args.theme))
                     elif p["kind"] == "cross":
-                        rp = renderer.render_insider_cross_card_dark(p)
+                        rp = renderer.render_insider_cross_card_dark(p, theme=_resolve_theme(args.theme))
                     else:
-                        rp = renderer.render_insider_chain_carousel_dark(p, variant="signal")
+                        rp = renderer.render_insider_chain_carousel_dark(p, variant="signal", theme=_resolve_theme(args.theme))
                 except Exception as e:
                     print(f"Render failed for signal {p['kind']} {p.get('base_symbol')}/{p.get('direction')}: {e}")
                     continue
@@ -544,9 +549,9 @@ def generate(args):
                 story = p["_story"]
                 try:
                     if p["kind"] == "cluster":
-                        rp = renderer.render_insider_cluster_carousel_dark(p, variant="story", story=story)
+                        rp = renderer.render_insider_cluster_carousel_dark(p, variant="story", story=story, theme=_resolve_theme(args.theme))
                     else:
-                        rp = renderer.render_insider_chain_carousel_dark(p, variant="story", story=story)
+                        rp = renderer.render_insider_chain_carousel_dark(p, variant="story", story=story, theme=_resolve_theme(args.theme))
                 except Exception as e:
                     print(f"Render failed for story {p['kind']} {p.get('base_symbol')}/{p.get('direction')}: {e}")
                     continue
@@ -802,33 +807,33 @@ def generate(args):
             if args.limit: clusters = clusters[:args.limit]
             print(f"Multi-holder insider clusters (dark): {len(clusters)} (2-slide carousel each)")
             for cluster in clusters:
-                paths.extend(renderer.render_insider_cluster_carousel_dark(cluster))
+                paths.extend(renderer.render_insider_cluster_carousel_dark(cluster, theme=_resolve_theme(args.theme)))
         elif args.mode == "filings-cluster-signal-dark":
             clusters = group_insider_clusters(df)
             if args.limit: clusters = clusters[:args.limit]
             print(f"Multi-holder insider clusters (signal dark preview): {len(clusters)} (2-slide carousel each)")
             for cluster in clusters:
-                paths.extend(renderer.render_insider_cluster_carousel_dark(cluster, variant="signal"))
+                paths.extend(renderer.render_insider_cluster_carousel_dark(cluster, variant="signal", theme=_resolve_theme(args.theme)))
         elif args.mode == "filings-chain-dark":
             chains = group_insider_chains(df)
             if args.limit:
                 chains = chains[: args.limit]
             print(f"Single-holder insider chains (dark): {len(chains)} (2-slide carousel each)")
             for chain in chains:
-                paths.extend(renderer.render_insider_chain_carousel_dark(chain))
+                paths.extend(renderer.render_insider_chain_carousel_dark(chain, theme=_resolve_theme(args.theme)))
         elif args.mode == "filings-chain-signal-dark":
             chains = group_insider_chains(df)
             if args.limit:
                 chains = chains[: args.limit]
             print(f"Single-holder insider chains (signal dark preview): {len(chains)} (2-slide carousel each)")
             for chain in chains:
-                paths.extend(renderer.render_insider_chain_carousel_dark(chain, variant="signal"))
+                paths.extend(renderer.render_insider_chain_carousel_dark(chain, variant="signal", theme=_resolve_theme(args.theme)))
         elif args.mode == "filings-cross-dark":
             crosses = group_insider_cross(df)
             if args.limit: crosses = crosses[:args.limit]
             print(f"Cross-stock insider holders (dark): {len(crosses)}")
             for cross in crosses:
-                paths.extend(renderer.render_insider_cross_card_dark(cross))
+                paths.extend(renderer.render_insider_cross_card_dark(cross, theme=_resolve_theme(args.theme)))
         elif args.mode == "filings-becoming-insider-dark":
             events = group_becoming_insider(df)
             if args.limit: events = events[:args.limit]
@@ -1118,6 +1123,10 @@ def build_parser():
     parser.add_argument("--date-label", help="Display date label, defaults to today.")
     parser.add_argument("--hours", type=int, default=24, help="Lookback window for daily filings and news.")
     parser.add_argument("--limit", type=int, help="Maximum records to render for per-item modes (categories for news-tier1).")
+    parser.add_argument("--theme", default="default",
+                        help="Color theme for insider cluster/chain/cross carousels "
+                             "(default, aurora, ember, neon). Use 'rotate' to cycle "
+                             "them per post via state/theme_rotation.json.")
     parser.add_argument("--max-posts", type=int, default=3, help="Hard cap on total Slack posts emitted per run. Defaults to 3.")
     parser.add_argument("--dry-run", action="store_true", help="Generate images but skip Slack upload.")
     parser.add_argument("--all-news", action="store_true", help="Backfill all tiered news instead of filtering by --hours.")

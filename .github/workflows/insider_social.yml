@@ -104,6 +104,7 @@ jobs:
             --mode "${{ steps.resolve_mode.outputs.mode }}" \
             --slack-channel "${{ steps.resolve_mode.outputs.channel }}" \
             --max-posts 2 \
+            --theme rotate \
             ${{ steps.resolve_mode.outputs.dry_run }}
 
       - name: Upload generated PNGs as artifact
@@ -120,7 +121,7 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add state/posted_insider.json
+          git add state/posted_insider.json state/theme_rotation.json
           git commit -m "chore: update insider post state [skip ci]" || { echo "no state change"; exit 0; }
           for i in 1 2 3 4 5; do
             git push && { echo "pushed on attempt $i"; exit 0; }

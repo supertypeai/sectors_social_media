@@ -458,6 +458,52 @@ class SocialImageRenderer(InsiderEarningsRendererMixin):
     IDX_DARK_CARD_FILL = (20, 20, 24, 77)
     IDX_DARK_BORDER = "#28282e"
 
+    # ── Insider carousel color THEMES (cluster / chain / cross) ─────────────────
+    # Same IDX Fillings background; only the RENDERED elements recolor. Pick with
+    # the `theme=` arg (CLI: --theme). Each theme is a flat dict:
+    #   buy/sell/market/avg → stat-card accents + buy/sell direction accent
+    #   brand               → "INSIDER TRADING" pill, SHARES stat, mixed-day dot
+    #   market_line         → the market-close line on the chart
+    #   avg_line            → the dashed avg-filing-price line
+    #   palette             → per-insider scatter dots (roster key colors)
+    # Tune freely — this is the single source of truth for all three carousels.
+    INSIDER_THEMES = {
+        "default": {
+            "bg": "IDX Fillings.png",
+            "buy": "#A6D94E", "sell": "#F46D43", "market": "#3288BD", "avg": "#FDAE61",
+            "brand": "#F29942", "market_line": "#3288BD", "avg_line": "#5E4FA2",
+            "palette": ["#3288BD", "#66C2A5", "#ABDDA4", "#FDAE61", "#F46D43", "#D53E4F", "#5E4FA2"],
+        },
+        # AURORA — fully COOL story: navy bg, teal accent, purple brand, blue market.
+        # buy=teal recolors the headline ticker + CLUSTER pill + INSIDERS pill.
+        "aurora": {
+            "bg": "Aurora.png",
+            "buy": "#66C2A5", "sell": "#D53E4F", "market": "#3288BD", "avg": "#5E4FA2",
+            "brand": "#6D5FA6", "market_line": "#3F85A0", "avg_line": "#5E4FA2",
+            "palette": ["#66C2A5", "#3288BD", "#5E4FA2", "#3F85A0", "#6D5FA6", "#ABDDA4", "#FFED89"],
+        },
+        # EMBER — fully WARM story: orange bg, orange accent, pale-yellow brand,
+        # salmon market, maroon sell, pink dashed line.
+        "ember": {
+            "bg": "Ember.png",
+            "buy": "#FDAE61", "sell": "#9E0142", "market": "#F29942", "avg": "#FFBE5B",
+            "brand": "#FFED89", "market_line": "#F46D43", "avg_line": "#C14D94",
+            "palette": ["#F29942", "#FDAE61", "#FFED89", "#F46D43", "#C14D94", "#9E0142", "#FFBE5B"],
+        },
+        # NEON — punchy PINK/LIME on green: hot-pink accent + market, magenta brand,
+        # amber sell, teal market stat. Pink-on-green pops hardest.
+        "neon": {
+            "bg": "Neon.png",
+            "buy": "#F0748A", "sell": "#FFBE5B", "market": "#66C2A5", "avg": "#FFED89",
+            "brand": "#C14D94", "market_line": "#F0748A", "avg_line": "#FFED89",
+            "palette": ["#F0748A", "#FFED89", "#C14D94", "#A6D94E", "#FFBE5B", "#66C2A5", "#83B34C"],
+        },
+    }
+
+    def _insider_theme(self, theme=None):
+        """Resolve a theme name to its color dict, falling back to 'default'."""
+        return self.INSIDER_THEMES.get(theme or "default", self.INSIDER_THEMES["default"])
+
     def __init__(self, background_dir=BACKGROUND_DIR, output_dir=OUTPUT_DIR):
         self.background_dir = Path(background_dir)
         self.output_dir = Path(output_dir)
