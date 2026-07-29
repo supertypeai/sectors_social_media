@@ -914,10 +914,27 @@ def fetch_volume_spike_data():
         })
     )
 
+    # Same trailing-median stat, but over just the last 14 days (excluding
+    # today) rather than the full ~29-day window above - a spike has to
+    # clear BOTH bars, so a symbol that's merely been elevated for a month
+    # (inflating the 30d median toward today's volume) can't sneak through
+    # on the 30d ratio alone.
+    fourteen_days_ago = latest_date - pd.Timedelta(days=14)
+    vol_stats_14d = (
+        df_daily_others[df_daily_others["date"] >= fourteen_days_ago]
+        .groupby("symbol")[["volume"]]
+        .median()
+        .reset_index()
+        .rename(columns={"volume": "avg_volume_14d"})
+    )
+
     df_spike = df_daily_last.merge(vol_stats, on="symbol", how="left")
+    df_spike = df_spike.merge(vol_stats_14d, on="symbol", how="left")
     df_spike["volume_ratio"] = df_spike["volume"] / df_spike["avg_volume"]
+    df_spike["volume_ratio_14d"] = df_spike["volume"] / df_spike["avg_volume_14d"]
     df_spike = df_spike[
-        (df_spike["volume_ratio"] >= 3) & (df_spike["avg_volume"] > 0)
+        (df_spike["volume_ratio"] > 3) & (df_spike["avg_volume"] > 0) &
+        (df_spike["volume_ratio_14d"] > 3) & (df_spike["avg_volume_14d"] > 0)
     ].sort_values("volume_ratio", ascending=False)
 
     df_spike["foreign_activity"] = np.select(

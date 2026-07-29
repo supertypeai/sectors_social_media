@@ -423,6 +423,7 @@ def _volume_spike_stats(df_spike):
 def volume_spike(
     output: Path = typer.Option(Path("output"), "--output", "-o"),
     slack_channel: str | None = typer.Option(None, "--slack-channel"),
+    theme: str = typer.Option("red", "--theme", help="red, blue, orange, or green background theme"),
 ):
     renderer = VolumeSpikeRenderer(output_dir=output)
 
@@ -432,7 +433,7 @@ def volume_spike(
         raise typer.Exit(code=0)
 
     typer.echo(f"Rendering {len(data['df_spike'])} volume spike card(s)...")
-    paths = renderer.render(data=data)
+    paths = renderer.render(data=data, theme=theme)
     for path in paths:
         typer.echo(path.resolve())
 

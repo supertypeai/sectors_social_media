@@ -31,6 +31,36 @@ BORDER    = '#28282e'
 BG        = '#07070e'
 CARD_FILL = (20/255, 20/255, 24/255, 0.30)
 
+# ── color THEMES (background + accent recolor) ───────────────────────────────
+# Same layout; only the background image + the lime/ember/spectral/amber/tag
+# accents recolor. Mirrors image_generator.render.SocialImageRenderer's
+# INSIDER_THEMES pattern (same 4 background assets), adapted to volume-spike's
+# own color roles: lime/ember read as positive/negative (buy days, net foreign
+# flow direction), spectral marks the median line + volume-ratio stat, amber
+# is the bar-gradient start, tag is the header card's border.
+VOLUME_SPIKE_THEMES = {
+    "red": {
+        "bg": "volume_spike.png",
+        "lime": "#A6D94E", "ember": "#F46D43", "spectral": "#3288BD",
+        "amber": "#FDAE61", "tag": "#F29942",
+    },
+    "blue": {
+        "bg": "Aurora.png",
+        "lime": "#66C2A5", "ember": "#D53E4F", "spectral": "#3288BD",
+        "amber": "#5E4FA2", "tag": "#3F85A0",
+    },
+    "orange": {
+        "bg": "Ember.png",
+        "lime": "#FDAE61", "ember": "#9E0142", "spectral": "#F29942",
+        "amber": "#FFBE5B", "tag": "#F46D43",
+    },
+    "green": {
+        "bg": "Neon.png",
+        "lime": "#A6D94E", "ember": "#F0748A", "spectral": "#66C2A5",
+        "amber": "#FFED89", "tag": "#83B34C",
+    },
+}
+
 
 # ── small helpers ─────────────────────────────────────────────────────────────
 def _fmt_vol(v):
@@ -108,6 +138,11 @@ def _place_icon(ax, arr, xy, zoom=0.4, zorder=6):
 class VolumeSpikeRenderer(SocialImageRenderer):
     _fonts_registered = False
 
+    def _volume_spike_theme(self, theme=None):
+        """Resolve a theme name to its color+background dict, falling back
+        to 'red' (the original, only background before theming existed)."""
+        return VOLUME_SPIKE_THEMES.get(theme or "red", VOLUME_SPIKE_THEMES["red"])
+
     def _register_fonts(self):
         if VolumeSpikeRenderer._fonts_registered:
             return
@@ -141,11 +176,19 @@ class VolumeSpikeRenderer(SocialImageRenderer):
         except Exception:
             return None
 
-    def _render_card(self, row, sym_v, df_history, compro_df):
+    def _render_card(self, row, sym_v, df_history, compro_df, theme=None):
+        # Shadows the module-level LIME/EMBER/SPECTRAL/AMBER/TAG_OG constants
+        # for the rest of this function only, so every existing reference to
+        # them below picks up the theme's colors without needing to touch
+        # each call site individually.
+        th = self._volume_spike_theme(theme)
+        LIME, EMBER, SPECTRAL, AMBER, TAG_OG = th["lime"], th["ember"], th["spectral"], th["amber"], th["tag"]
+
         sym    = row['symbol']
         t_vol  = row['volume']
         m_vol  = row['avg_volume']
         v_rat  = row['volume_ratio']
+        v_rat_14d = row['volume_ratio_14d']
         c1     = (row.get('close_change_1d') or 0) * 100
         c3     = (row.get('close_change_3d') or 0) * 100
         c7     = (row.get('close_change_7d') or 0) * 100
@@ -187,7 +230,7 @@ class VolumeSpikeRenderer(SocialImageRenderer):
         # 9 x 11.25 in @ 120 dpi = 1080 x 1350, matching background/volume_spike.png
         fig = plt.figure(figsize=(9, 11.25), facecolor=BG, dpi=120)
 
-        bg_arr = np.array(Image.open(self.background_dir / 'volume_spike.png').convert('RGB'))
+        bg_arr = np.array(Image.open(self.background_dir / th["bg"]).convert('RGB'))
         ax_bg = fig.add_axes([0, 0, 1, 1], zorder=0)
         ax_bg.imshow(bg_arr, aspect='auto', origin='upper', interpolation='bilinear',
                      extent=[0, 1, 0, 1], transform=ax_bg.transAxes)
@@ -200,18 +243,12 @@ class VolumeSpikeRenderer(SocialImageRenderer):
         a0.set_xlim(0, 10); a0.set_ylim(0, 3)
         a0.text(0.35, 1.95, 'VOLUME SPIKE', fontsize=40, fontweight='bold', color=WHITE, va='center')
         sym_clean = sym.replace('.JK', '')
-        # 3-day trend EXCLUDING today (the spike day) vs the 30D median, so the bullet
-        # answers "was volume already building up?" rather than restating today's spike.
-        prior3 = vols[-4:-1]
         a0.text(0.35, 1.05,
+                        f"•  Today's transaction volume of {sym_clean} is {v_rat_14d:.2f}x the 14D median",
+                        fontsize=12.5, color=COOL, va='center')
+        a0.text(0.35, 0.5,
                 f"•  Today's transaction volume of {sym_clean} is {v_rat:.2f}x the 30D median",
                 fontsize=12.5, color=COOL, va='center')
-        if len(prior3) and m_vol:
-            r3 = float(np.mean(prior3)) / m_vol
-            a0.text(0.35, 0.50,
-                    f"•  Over the past 3 days, {sym_clean}'s average volume was "
-                    f"{r3:.1f}x its 30D median",
-                    fontsize=12.5, color=COOL, va='center')
 
         # ── stock info ────────────────────────────────────────────────────────
         _card(fig, STK)
@@ -352,17 +389,17 @@ class VolumeSpikeRenderer(SocialImageRenderer):
         return fig
 
     def render_one(self, row: dict, df_latest_7: pd.DataFrame,
-                   df_history: pd.DataFrame, compro_df: pd.DataFrame) -> Path:
+                   df_history: pd.DataFrame, compro_df: pd.DataFrame, theme=None) -> Path:
         sym   = str(row['symbol']).replace('.JK', '')
         sym_v = df_latest_7[df_latest_7['symbol'] == row['symbol']].sort_values('date').reset_index(drop=True)
-        fig   = self._render_card(row, sym_v, df_history, compro_df)
+        fig   = self._render_card(row, sym_v, df_history, compro_df, theme=theme)
         path  = self.output_dir / f'volume_spike_{sym}.png'
         fig.savefig(str(path), dpi=120, pad_inches=0)
         plt.close(fig)
         print(f"Saved: {path}")
         return path
 
-    def render(self, data: dict) -> list[Path]:
+    def render(self, data: dict, theme=None) -> list[Path]:
         self._register_fonts()
         df_spike   = data['df_spike']
         df_latest_7 = data['df_latest_7']
@@ -371,5 +408,5 @@ class VolumeSpikeRenderer(SocialImageRenderer):
 
         paths = []
         for _, row in df_spike.iterrows():
-            paths.append(self.render_one(row.to_dict(), df_latest_7, df_history, compro_df))
+            paths.append(self.render_one(row.to_dict(), df_latest_7, df_history, compro_df, theme=theme))
         return paths
