@@ -100,6 +100,11 @@
       "latest_quarter": "Q1-2026",
       "posted_at": "2026-06-25"
     },
+    "earnings:MCOL:Q2-2026:drop": {
+      "earnings_growth": -0.9999250873596247,
+      "latest_quarter": "Q2-2026",
+      "posted_at": "2026-07-29"
+    },
     "earnings:MEDC:Q1-2026:spike": {
       "earnings_growth": 2.916015034212479,
       "latest_quarter": "Q1-2026",
