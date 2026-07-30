@@ -8,9 +8,11 @@ DIVIDEND_STATE_PATH = Path("state/posted_dividend.json")
 THEME_ROTATION_PATH = Path("state/theme_rotation.json")
 THEME_ROTATION_ORDER = ["default", "aurora", "ember", "neon"]
 
+VOLUME_SPIKE_THEME_ROTATION_PATH = Path("state/volume_spike_theme_rotation.json")
+VOLUME_SPIKE_THEME_ROTATION_ORDER = ["red", "blue", "orange", "green"]
 
-def next_rotating_theme(order: list[str] = THEME_ROTATION_ORDER) -> str:
-    path = THEME_ROTATION_PATH
+
+def next_rotating_theme(order: list[str] = THEME_ROTATION_ORDER, path: Path = THEME_ROTATION_PATH) -> str:
     idx = 0
     if path.exists():
         try:

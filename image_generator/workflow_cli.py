@@ -52,6 +52,17 @@ from .data import (
 from .summarizer import NewsSummarizer
 from .social_queue import queue_post, crosspost_to_threads
 from .post_routing import scheduled_at_for
+from .utils.io_helper import (
+    next_rotating_theme,
+    VOLUME_SPIKE_THEME_ROTATION_ORDER,
+    VOLUME_SPIKE_THEME_ROTATION_PATH,
+)
+
+
+def _resolve_volume_spike_theme(theme: str) -> str:
+    if theme == "rotate":
+        return next_rotating_theme(VOLUME_SPIKE_THEME_ROTATION_ORDER, VOLUME_SPIKE_THEME_ROTATION_PATH)
+    return theme
 from .utils.io_helper import load_dividend_state, save_dividend_state
 from .triggers import (
     load_ownership_state,
@@ -423,7 +434,10 @@ def _volume_spike_stats(df_spike):
 def volume_spike(
     output: Path = typer.Option(Path("output"), "--output", "-o"),
     slack_channel: str | None = typer.Option(None, "--slack-channel"),
-    theme: str = typer.Option("red", "--theme", help="red, blue, orange, or green background theme"),
+    theme: str = typer.Option(
+        "rotate", "--theme",
+        help="red, blue, orange, green, or 'rotate' to auto-advance through all four",
+    ),
 ):
     renderer = VolumeSpikeRenderer(output_dir=output)
 
@@ -432,8 +446,9 @@ def volume_spike(
         typer.echo("Skipping volume-spike: no spikes detected today")
         raise typer.Exit(code=0)
 
-    typer.echo(f"Rendering {len(data['df_spike'])} volume spike card(s)...")
-    paths = renderer.render(data=data, theme=theme)
+    resolved_theme = _resolve_volume_spike_theme(theme)
+    typer.echo(f"Rendering {len(data['df_spike'])} volume spike card(s)... (theme: {resolved_theme})")
+    paths = renderer.render(data=data, theme=resolved_theme)
     for path in paths:
         typer.echo(path.resolve())
 
