@@ -125,6 +125,11 @@
       "latest_quarter": "Q1-2026",
       "posted_at": "2026-06-30"
     },
+    "earnings:TINS:Q2-2026:spike": {
+      "earnings_growth": 3.045558067897737,
+      "latest_quarter": "Q2-2026",
+      "posted_at": "2026-07-30"
+    },
     "earnings:UNTR:Q1-2026:drop": {
       "earnings_growth": -0.7983467542942945,
       "latest_quarter": "Q1-2026",
