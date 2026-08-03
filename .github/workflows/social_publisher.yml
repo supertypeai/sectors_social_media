@@ -11,8 +11,8 @@ on:
   # is self-correcting: a due row just gets picked up on the next tick
   # regardless of a few minutes of scheduler jitter, so the precision that
   # matters for e.g. a single daily content post doesn't matter here.
-  schedule:
-    - cron: '*/30 * * * *'
+  # schedule:
+  #   - cron: '*/30 * * * *'
   workflow_dispatch:
 
 concurrency:
