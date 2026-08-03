@@ -337,7 +337,7 @@ def dividend(
 ):
     renderer = DividendRenderer(output_dir=output)
     upcoming_dividends = fetch_idx_upcoming_dividend(to_df=False)
-    
+
     if not upcoming_dividends:
         typer.echo("Skipping dividend: upcoming dividend data is null")
         raise typer.Exit(code=0)
@@ -694,7 +694,7 @@ def macro_news(
     )
 
     since_dt = datetime.strptime(since, "%Y-%m-%d") if since else None
-    records = fetch_macro_news(th_score=80, since=since_dt)
+    records = fetch_macro_news(th_score=75, since=since_dt)
 
     if not records: 
         typer.echo("Skipping macro-news: no records found")
@@ -706,55 +706,69 @@ def macro_news(
         reverse=True
     )
 
-    slides = []
+    final_records = []
 
-    for record in records[:1]:
-        source = tldextract.extract(record['source'])
+    for record in records:
+        is_macro_news = summarizer.detect_macro_news(record)
 
-        slide = summarizer.generate_macro_slide(
-            title=record['title'],
-            body=record['body'],
-            tags=record['tags'],
-        )
+        if is_macro_news:
+            final_records.append(record)
+            break
 
-        if not slide:
-            continue
+        time.sleep(2)
 
-        slide['source'] = source.domain
+    if not final_records:
+        typer.echo("Skipping macro-news: no records passed macro classification")
+        raise typer.Exit(code=0)
 
-        slides.append(slide)
-        time.sleep(5)
+    final_record = final_records[0]
 
-    if not slides:
+    source = tldextract.extract(final_record['source'])
+
+    slide = summarizer.generate_macro_slide(
+        title=final_record['title'],
+        body=final_record['body'],
+        tags=final_record['tags'],
+    )
+
+    if not slide:
         typer.echo("Skipping macro-news: no records found")
         raise typer.Exit(code=0)
 
-    paths = []
+    slide['source'] = source.domain
 
-    for index, slide in enumerate(slides):
-        path = renderer.render(
-            data=slide,
-            filename=f'macro_news_test_{index + 1}.png',
+    time.sleep(5)
+
+    path = renderer.render(
+        data=slide,
+        filename='macro_news.png',
+    )
+
+    typer.echo(path.resolve())
+
+    headline = " ".join(slide.get("headline_lines") or [])
+    body = slide.get("body") or ""
+    insight = slide.get("insight") or ""
+    slide_caption = "\n\n".join(part for part in [headline, body, insight] if part) or "Macro News"
+    slide_caption = f"{slide_caption}\n\n#IDX #StockMarket #Indonesia #MacroNews #SectorsApp"
+
+    try:
+        _queue_post(
+            "macro-news", 
+            path, 
+            slide_caption, 
+            content_type="macro-news"
         )
 
-        typer.echo(path.resolve())
-        paths.append(path)
+    except Exception as error:
+        typer.echo(f"Queue write failed for macro-news slide: {error}")
 
-        headline = " ".join(slide.get("headline_lines") or [])
-        body = slide.get("body") or ""
-        insight = slide.get("insight") or ""
-        slide_caption = "\n\n".join(part for part in [headline, body, insight] if part) or "Macro News"
-        slide_caption = f"{slide_caption}\n\n#IDX #StockMarket #Indonesia #MacroNews #SectorsApp"
-        try:
-            _queue_post("macro-news", path, slide_caption, content_type=f"macro-news-{index + 1}")
-        except Exception as error:
-            typer.echo(f"Queue write failed for macro-news slide {index + 1}: {error}")
-
-    if slack_channel and paths:
+    if slack_channel:
         caption = "Macro News\n\n#IDX #StockMarket #Indonesia #MacroNews #SectorsApp"
-        posts = [(paths[0], caption), *paths[1:]]
-
-        upload_posts_to_slack(posts, slack_channel=slack_channel)
+        upload_posts_to_slack(
+            [(path, caption)], 
+            slack_channel=slack_channel
+        )
 
 
 _STOCK_PERF_TAGS = "#IDX #StockMarket #Indonesia #StockPerformance #SectorsApp"

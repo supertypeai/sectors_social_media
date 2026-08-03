@@ -90,6 +90,15 @@ class MacroInfo(BaseModel):
     )
 
 
+class MacroNewsDetection(BaseModel):
+    is_macro_news: bool = Field(
+        description="Whether the article is primarily about a macroeconomic or market-wide event."
+    )
+    reason: str = Field(
+        description="A short explanation based only on the article title and body."
+    )
+
+
 class PromptCollections:
     @staticmethod
     def system_prompt_macro_news():
@@ -165,6 +174,48 @@ class PromptCollections:
     def user_prompt_macro_news(title: str, body: str):
         return f"""
             Generate slide content for the following macro news record.
+
+            Title: {title}
+
+            Body: {body}
+
+            Return only valid JSON matching the required schema.
+        """
+
+    @staticmethod
+    def system_prompt_detect_macro_news():
+        return """
+            You are a strict financial-news classifier for Sectors, an Indonesian
+            equity data platform. Determine whether the article's primary subject is
+            macro news. Return only valid JSON matching the provided schema.
+
+            Set is_macro_news to true when the article is mainly about an economy-wide,
+            market-wide, regional, or global development, including:
+            - central-bank decisions, interest rates, inflation, GDP, employment,
+              currencies, sovereign debt, or broad liquidity and capital flows;
+            - fiscal policy, taxation, tariffs, trade policy, or government regulation
+              with broad economic or financial-market impact;
+            - broad commodity or energy developments, geopolitical events, or index and
+              market-structure changes that materially affect an economy or financial
+              market.
+
+            Set is_macro_news to false when the article is mainly about:
+            - one company, stock, executive, product, project, transaction, earnings
+              report, dividend, or other corporate action;
+            - a narrow industry event without a clear economy-wide or market-wide impact;
+            - personal finance, lifestyle, crime, entertainment, or another topic that
+              only happens to mention economic terms.
+
+            Classify the article by its main subject and actual substance, not merely by
+            keywords or tags. A company quote or example inside a broader macro story
+            does not make the story company news. Use only the supplied title and body;
+            do not assume facts that are absent. Keep reason to one concise sentence.
+        """
+
+    @staticmethod
+    def user_prompt_detect_macro_news(title: str, body: str):
+        return f"""
+            Classify whether this article is macro news.
 
             Title: {title}
 
@@ -977,7 +1028,7 @@ class NewsSummarizer:
             except Exception as error:
                 print(f"Key failed for model={model}: {error}")
                 last_error = error
-        
+
         raise last_error
 
     def summarize_filing_context(self, context):
@@ -1024,8 +1075,8 @@ class NewsSummarizer:
                 print(f'model used: {model}')
 
                 response = self._call(
-                    model=model, 
-                    contents=user_prompt, 
+                    model=model,
+                    contents=user_prompt,
                     config=config
                 )
 
@@ -1043,6 +1094,41 @@ class NewsSummarizer:
 
         print(f"All models and keys failed for: {title[:60]}")
         return None
+
+    def detect_macro_news(self, record: dict) -> bool:
+        title = str(record.get('title') or '')
+        body = str(record.get('body') or '')
+        system_prompt = self.prompts.system_prompt_detect_macro_news()
+        user_prompt = self.prompts.user_prompt_detect_macro_news(title, body)
+
+        config = types.GenerateContentConfig(
+            system_instruction=system_prompt,
+            response_mime_type='application/json',
+            response_schema=MacroNewsDetection,
+            temperature=0.0
+        )
+
+        for model in self.MODELS:
+            try:
+                print(f'model used: {model}')
+
+                response = self._call(
+                    model=model,
+                    contents=user_prompt,
+                    config=config
+                )
+
+                result = json.loads(response.text)
+                is_macro_news = bool(result.get('is_macro_news'))
+
+                print(f"Macro classification: {is_macro_news} - {result.get('reason', '')}")
+                return is_macro_news
+
+            except Exception as error:
+                print(f"All keys exhausted for model={model}: {error}")
+
+        print(f"All models and keys failed for: {title[:60]}")
+        return False
 
     def generate_earnings_caption(self, spike: dict, news_articles: list[dict] | None = None) -> str | None:
         """One caption on why a quarter's profit/revenue moved and whether it
