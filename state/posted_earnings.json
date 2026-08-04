@@ -50,6 +50,11 @@
       "latest_quarter": "Q1-2026",
       "posted_at": "2026-06-12"
     },
+    "earnings:CBDK:Q2-2026:spike": {
+      "earnings_growth": 1.9602364670223045,
+      "latest_quarter": "Q2-2026",
+      "posted_at": "2026-08-04"
+    },
     "earnings:CITA:Q1-2026:drop": {
       "earnings_growth": -0.7209155082901217,
       "latest_quarter": "Q1-2026",
