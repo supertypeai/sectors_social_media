@@ -78,6 +78,12 @@
       "posted_at": "2026-07-31",
       "progress_count": 9
     },
+    "chain:investment management mb:CYBR:sell": {
+      "completed_date": "2026-08-05",
+      "completing_filing_id": 4373,
+      "posted_at": "2026-08-05",
+      "progress_count": 7
+    },
     "chain:khiat yulisar:HEAL:buy": {
       "completed_date": "2026-06-11",
       "completing_filing_id": 3817,
@@ -139,10 +145,10 @@
       "progress_count": 3
     },
     "cluster:CYBR:sell": {
-      "completed_date": "2026-06-16",
-      "completing_filing_id": 3853,
-      "posted_at": "2026-06-16",
-      "progress_count": 3
+      "completed_date": "2026-08-05",
+      "completing_filing_id": 4374,
+      "posted_at": "2026-08-05",
+      "progress_count": 4
     },
     "cluster:EPAC:sell": {
       "completed_date": "2026-07-02",
