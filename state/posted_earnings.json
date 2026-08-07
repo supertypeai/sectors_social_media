@@ -35,6 +35,11 @@
       "latest_quarter": "Q1-2026",
       "posted_at": "2026-06-16"
     },
+    "earnings:BKSL:Q2-2026:spike": {
+      "earnings_growth": 2.3820195210792514,
+      "latest_quarter": "Q2-2026",
+      "posted_at": "2026-08-07"
+    },
     "earnings:BNBR:Q1-2026:drop": {
       "earnings_growth": -0.797794295480563,
       "latest_quarter": "Q1-2026",
