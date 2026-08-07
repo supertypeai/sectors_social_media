@@ -707,7 +707,6 @@ class SocialImageRenderer(InsiderEarningsRendererMixin):
             
             # Card
             self._card(draw, (margin, y, w - margin, y + card_h), radius=24, fill="#ffffff", outline="#eeeeee", width=2)
-            draw.rounded_rectangle((margin, y, margin + 10, y + card_h), radius=6, fill=accent_color)
 
             # Logo (96)
             logo_x, logo_y = margin + 35, y + 35

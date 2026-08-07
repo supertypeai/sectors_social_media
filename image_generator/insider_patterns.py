@@ -138,13 +138,32 @@ def filter_plain_filings(
         lambda tags: not ({str(tag).lower() for tag in tags} & EXCLUDED_PLAIN_FILINGS_TAGS)
     )
 
-    return df[
+    plain_filings = df[
         on_target_day
         & context_empty
         & insider
         & trading
         & not_mesop_takeover
-    ].sort_values("transaction_value", ascending=False)
+    ].copy()
+
+    # One filing can be ingested more than once with different record IDs
+    card_fields = [
+        "symbol",
+        "holder_name",
+        "transaction_type",
+        "transaction_value",
+        "amount_transaction",
+        "price",
+        "share_percentage_before",
+        "share_percentage_after",
+    ]
+
+    return plain_filings.sort_values(
+        "transaction_value", ascending=False
+    ).drop_duplicates(
+        subset=card_fields,
+        keep="first",
+    )
 
 
 def _safe_float(value):
