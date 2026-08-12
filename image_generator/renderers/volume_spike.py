@@ -216,13 +216,13 @@ class VolumeSpikeRenderer(SocialImageRenderer):
 
         # ── layout ────────────────────────────────────────────────────────────
         L, W = 0.04, 0.92
-        HDR = (L, 0.864, W, 0.126)
-        STK = (L, 0.745, W, 0.110)
-        CHT = (L, 0.385, W, 0.350)
-        FRN = (L, 0.082, W, 0.158)
+        HDR = (L, 0.829, W, 0.126)
+        STK = (L, 0.697, W, 0.110)
+        CHT = (L, 0.391, W, 0.296)
+        FRN = (L, 0.100, W, 0.158)
         _cg = 0.016
         _cw = (W - 2 * _cg) / 3
-        PRC = [(L + i * (_cw + _cg), 0.250, _cw, 0.125) for i in range(3)]
+        PRC = [(L + i * (_cw + _cg), 0.268, _cw, 0.113) for i in range(3)]
         CHT_L, CHT_B, CHT_W, CHT_H = CHT
         CHT_AX = (CHT_L + 0.095, CHT_B + 0.048, CHT_W - 0.115, CHT_H - 0.088)
 
@@ -368,23 +368,23 @@ class VolumeSpikeRenderer(SocialImageRenderer):
             alpha = icon_globe[:, :, 3].copy()
             rgb   = 255 - icon_globe[:, :, :3]
             icon_globe = _gradient_tint_icon(np.dstack([rgb, alpha]), (1.00, 0.44, 0.26), (1.00, 0.33, 0.60))
-        _place_icon(a3, icon_globe, (0.57, 2.75), zoom=0.75)
+        _place_icon(a3, icon_globe, (0.57, 2.50), zoom=0.75)
 
         net_col = LIME if f_net >= 0 else EMBER
-        a3.text(1.15, 3.15, "FOREIGN NET BUY / SELL (TODAY)", fontsize=13, color=WHITE, va='center', fontweight='bold')
-        a3.text(1.15, 2.35, _fmt_idr(f_net), fontsize=30, fontweight='bold', color=net_col, va='center')
-        a3.text(1.15, 1.6, f_act, fontsize=15, color=net_col, fontweight='bold', va='center')
-        a3.plot([5.25, 5.25], [0.5, 3.5], color=BORDER, lw=1, alpha=0.9, zorder=2)
+        a3.text(1.15, 2.90, "FOREIGN NET BUY / SELL (TODAY)", fontsize=13, color=WHITE, va='center', fontweight='bold')
+        a3.text(1.15, 2.10, _fmt_idr(f_net), fontsize=30, fontweight='bold', color=net_col, va='center')
+        a3.text(1.15, 1.35, f_act, fontsize=15, color=net_col, fontweight='bold', va='center')
+        a3.plot([5.25, 5.25], [0.25, 3.25], color=BORDER, lw=1, alpha=0.9, zorder=2)
 
         net30_col = LIME if net_30d_idr >= 0 else EMBER
         net30_act = "Net Buy" if net_30d_idr >= 0 else "Net Sell"
-        a3.text(7.5, 3.15, "30D NET FOREIGN ACTIVITY", fontsize=13, color=WHITE, va='center', ha='center', fontweight='bold')
-        a3.text(7.5, 2.55, f"{net30_act} - {_fmt_idr(net_30d_idr)}", fontsize=18, fontweight='bold', color=net30_col, va='center', ha='center')
-        a3.text(6.5, 1.55, str(buy_days),  fontsize=18, fontweight='bold', color=LIME,  va='center', ha='center')
-        a3.text(6.5, 1.0,  "Buy Days",     fontsize=10, color=LIME,  va='center', fontweight='bold', ha='center')
-        a3.text(8.5, 1.55, str(sell_days), fontsize=18, fontweight='bold', color=EMBER, va='center', ha='center')
-        a3.text(8.5, 1.0,  "Sell Days",    fontsize=10, color=EMBER, va='center', fontweight='bold', ha='center')
-        a3.plot([7.5, 7.5], [0.5, 2.15], color=BORDER, lw=1, alpha=0.7, zorder=2)
+        a3.text(7.5, 2.90, "30D NET FOREIGN ACTIVITY", fontsize=13, color=WHITE, va='center', ha='center', fontweight='bold')
+        a3.text(7.5, 2.30, f"{net30_act} - {_fmt_idr(net_30d_idr)}", fontsize=18, fontweight='bold', color=net30_col, va='center', ha='center')
+        a3.text(6.5, 1.30, str(buy_days),  fontsize=18, fontweight='bold', color=LIME,  va='center', ha='center')
+        a3.text(6.5, 0.75, "Buy Days",     fontsize=10, color=LIME,  va='center', fontweight='bold', ha='center')
+        a3.text(8.5, 1.30, str(sell_days), fontsize=18, fontweight='bold', color=EMBER, va='center', ha='center')
+        a3.text(8.5, 0.75, "Sell Days",    fontsize=10, color=EMBER, va='center', fontweight='bold', ha='center')
+        a3.plot([7.5, 7.5], [0.25, 1.90], color=BORDER, lw=1, alpha=0.7, zorder=2)
 
         return fig
 
