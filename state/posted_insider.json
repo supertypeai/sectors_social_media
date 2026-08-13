@@ -12,6 +12,12 @@
       "posted_at": "2026-07-30",
       "progress_count": 7
     },
+    "chain:atmadja hartono:GOOD:buy": {
+      "completed_date": "2026-08-13",
+      "completing_filing_id": 4465,
+      "posted_at": "2026-08-13",
+      "progress_count": 3
+    },
     "chain:bhakti cakra para putra:ISSP:buy": {
       "completed_date": "2026-06-17",
       "completing_filing_id": 3855,
@@ -155,6 +161,12 @@
       "completing_filing_id": 3978,
       "posted_at": "2026-07-02",
       "progress_count": 5
+    },
+    "cluster:GOOD:buy": {
+      "completed_date": "2026-08-13",
+      "completing_filing_id": 4465,
+      "posted_at": "2026-08-13",
+      "progress_count": 6
     },
     "cluster:HEAL:buy": {
       "completed_date": "2026-06-11",
