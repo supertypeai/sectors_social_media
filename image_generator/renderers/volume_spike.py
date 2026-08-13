@@ -74,7 +74,9 @@ def _fmt_idr(v):
     s, av = ('+', abs(v)) if v >= 0 else ('-', abs(v))
     if av >= 1e12: return f"IDR {s}{av/1e12:.1f}T"
     if av >= 1e9:  return f"IDR {s}{av/1e9:.0f}B"
-    if round(av / 1e6) == 0: return "IDR 0M"
+    if round(av / 1e6) == 0:
+        if av == 0: return "IDR 0"
+        return f"IDR {s}{av/1e3:.0f}K"
     return f"IDR {s}{av/1e6:.0f}M"
 
 
