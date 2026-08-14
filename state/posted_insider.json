@@ -79,10 +79,10 @@
       "progress_count": 24
     },
     "chain:investama jaya tunggal:IMPC:buy": {
-      "completed_date": "2026-08-07",
-      "completing_filing_id": 4404,
-      "posted_at": "2026-08-07",
-      "progress_count": 10
+      "completed_date": "2026-08-12",
+      "completing_filing_id": 4463,
+      "posted_at": "2026-08-14",
+      "progress_count": 11
     },
     "chain:investment management mb:CYBR:sell": {
       "completed_date": "2026-08-05",
@@ -181,10 +181,10 @@
       "progress_count": 4
     },
     "cluster:IMPC:buy": {
-      "completed_date": "2026-07-28",
-      "completing_filing_id": 4265,
-      "posted_at": "2026-07-28",
-      "progress_count": 3
+      "completed_date": "2026-08-14",
+      "completing_filing_id": 4486,
+      "posted_at": "2026-08-14",
+      "progress_count": 4
     },
     "cluster:KLBF:buy": {
       "completed_date": "2026-07-10",
