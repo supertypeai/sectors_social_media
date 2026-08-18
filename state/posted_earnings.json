@@ -180,6 +180,11 @@
       "latest_quarter": "Q1-2026",
       "posted_at": "2026-06-30"
     },
+    "earnings:SMAR:Q2-2026:spike": {
+      "earnings_growth": 1.1914200348696729,
+      "latest_quarter": "Q2-2026",
+      "posted_at": "2026-08-18"
+    },
     "earnings:TINS:Q2-2026:spike": {
       "earnings_growth": 3.045558067897737,
       "latest_quarter": "Q2-2026",
