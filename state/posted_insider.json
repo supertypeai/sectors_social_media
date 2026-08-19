@@ -126,6 +126,12 @@
       "posted_at": "2026-06-29",
       "progress_count": 7
     },
+    "cluster:BBMD:buy": {
+      "completed_date": "2026-08-19",
+      "completing_filing_id": 4509,
+      "posted_at": "2026-08-19",
+      "progress_count": 4
+    },
     "cluster:BCIC:buy": {
       "completed_date": "2026-07-21",
       "completing_filing_id": 4190,
