@@ -347,9 +347,12 @@ class VolumeSpikeRenderer(SocialImageRenderer):
             _card(fig, (lx, py, pw, ph))
             ac = _overlay(fig, (lx, py, pw, ph))
             ac.set_xlim(0, 1); ac.set_ylim(0, 1)
+            ac.text(0.07, 0.88, lbl, fontsize=10, color=WHITE, va='top')
+            if round(pct, 2) == 0:
+                ac.text(0.07, 0.55, 'No change', fontsize=18, fontweight='bold', color=COOL, va='center')
+                continue
             col  = LIME if pct >= 0 else EMBER
             sign = '+' if pct >= 0 else ''
-            ac.text(0.07, 0.88, lbl, fontsize=10, color=WHITE, va='top')
             ac.text(0.07, 0.60, f'{sign}{pct:.2f}%', fontsize=18, fontweight='bold', color=col, va='center')
             ac.text(0.89, 0.60, '↗' if pct >= 0 else '↘', fontsize=16, color=col, va='center', ha='center',
                     bbox=dict(boxstyle='circle,pad=0.22',
@@ -373,10 +376,14 @@ class VolumeSpikeRenderer(SocialImageRenderer):
             icon_globe = _gradient_tint_icon(np.dstack([rgb, alpha]), (1.00, 0.44, 0.26), (1.00, 0.33, 0.60))
         _place_icon(a3, icon_globe, (0.57, 2.50), zoom=0.75)
 
-        net_col = LIME if f_net >= 0 else EMBER
         a3.text(1.15, 2.90, "FOREIGN NET BUY / SELL (TODAY)", fontsize=13, color=WHITE, va='center', fontweight='bold')
-        a3.text(1.15, 2.10, _fmt_idr(f_net), fontsize=30, fontweight='bold', color=net_col, va='center')
-        a3.text(1.15, 1.35, f_act, fontsize=15, color=net_col, fontweight='bold', va='center')
+        if f_act == "Neutral":
+            a3.text(1.15, 2.10, "Balanced", fontsize=30, fontweight='bold', color=COOL, va='center')
+            a3.text(1.15, 1.35, "Net Zero Flow", fontsize=15, color=COOL, fontweight='bold', va='center')
+        else:
+            net_col = LIME if f_net >= 0 else EMBER
+            a3.text(1.15, 2.10, _fmt_idr(f_net), fontsize=30, fontweight='bold', color=net_col, va='center')
+            a3.text(1.15, 1.35, f_act, fontsize=15, color=net_col, fontweight='bold', va='center')
         a3.plot([5.25, 5.25], [0.25, 3.25], color=BORDER, lw=1, alpha=0.9, zorder=2)
 
         net30_col = LIME if net_30d_idr >= 0 else EMBER
