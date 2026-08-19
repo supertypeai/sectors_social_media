@@ -15,9 +15,16 @@ import re
 
 
 TABLE = "social_post_queue"
-STORAGE_BUCKET = "social_media_generation"
+STORAGE_BUCKET = "social_media_generation"  # legacy Supabase bucket - existing queue rows still point here, no longer written to
 VALID_PLATFORMS = {"ig", "threads"}
 VALID_POST_TYPES = {"feed", "story"}
+
+# Generated images now upload here instead of Supabase Storage - same bucket
+# already used (read-only) for company logos, confirmed public. Requires
+# GOOGLE_APPLICATION_CREDENTIALS (a service-account key with write access to
+# this bucket) in the environment.
+GCS_BUCKET = "sectorsapp-sea"
+GCS_PREFIX = "social_media"
 
 # Meta's real per-platform carousel caps (2026): IG tops out at 10 children,
 # Threads at 20. Exceeding these doesn't get politely rejected per-item - the
@@ -91,11 +98,15 @@ def _client():
 _service_client = _client
 
 
-def upload_image_to_storage(local_path, bucket: str = STORAGE_BUCKET, dest_name: str | None = None) -> str:
+def upload_image_to_storage(local_path, bucket: str = GCS_BUCKET, dest_name: str | None = None) -> str:
     """Convert a local image to JPEG (Instagram requires JPEG) and upload it
-    to the given public Storage bucket, returning its public URL.
+    to the GCS bucket (under GCS_PREFIX), returning its public URL. `bucket`
+    is kept as a parameter for compatibility with existing call sites, but
+    every caller in this codebase uses the default (GCS_BUCKET) - it's no
+    longer a Supabase Storage bucket name.
     """
     from PIL import Image
+    from google.cloud import storage as gcs_storage
 
     local_path = Path(local_path)
     dest_name = dest_name or f"{local_path.stem}.jpg"
@@ -105,13 +116,10 @@ def upload_image_to_storage(local_path, bucket: str = STORAGE_BUCKET, dest_name:
     image.save(buffer, format="JPEG", quality=95)
     buffer.seek(0)
 
-    client = _client()
-    client.storage.from_(bucket).upload(
-        dest_name,
-        buffer.read(),
-        file_options={"content-type": "image/jpeg", "upsert": "true"},
-    )
-    return client.storage.from_(bucket).get_public_url(dest_name)
+    gcs_client = gcs_storage.Client()
+    blob = gcs_client.bucket(bucket).blob(f"{GCS_PREFIX}/{dest_name}")
+    blob.upload_from_string(buffer.read(), content_type="image/jpeg")
+    return f"https://storage.googleapis.com/{bucket}/{GCS_PREFIX}/{dest_name}"
 
 
 def upsert_post(

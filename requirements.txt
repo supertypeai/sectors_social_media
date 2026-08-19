@@ -7,5 +7,6 @@ typer
 matplotlib>=3.7
 requests>=2.28
 google-genai>=0.3
+google-cloud-storage>=2.0
 openai
 tldextract

@@ -12,6 +12,12 @@
       "posted_at": "2026-07-30",
       "progress_count": 7
     },
+    "chain:atmadja hartono:GOOD:buy": {
+      "completed_date": "2026-08-13",
+      "completing_filing_id": 4465,
+      "posted_at": "2026-08-13",
+      "progress_count": 3
+    },
     "chain:bhakti cakra para putra:ISSP:buy": {
       "completed_date": "2026-06-17",
       "completing_filing_id": 3855,
@@ -73,16 +79,22 @@
       "progress_count": 24
     },
     "chain:investama jaya tunggal:IMPC:buy": {
-      "completed_date": "2026-08-07",
-      "completing_filing_id": 4404,
-      "posted_at": "2026-08-07",
-      "progress_count": 10
+      "completed_date": "2026-08-18",
+      "completing_filing_id": 4504,
+      "posted_at": "2026-08-18",
+      "progress_count": 12
     },
     "chain:investment management mb:CYBR:sell": {
       "completed_date": "2026-08-05",
       "completing_filing_id": 4373,
       "posted_at": "2026-08-05",
       "progress_count": 7
+    },
+    "chain:jemmy kurniawan:MEDS:sell": {
+      "completed_date": "2026-08-15",
+      "completing_filing_id": 4496,
+      "posted_at": "2026-08-17",
+      "progress_count": 18
     },
     "chain:khiat yulisar:HEAL:buy": {
       "completed_date": "2026-06-11",
@@ -156,6 +168,12 @@
       "posted_at": "2026-07-02",
       "progress_count": 5
     },
+    "cluster:GOOD:buy": {
+      "completed_date": "2026-08-13",
+      "completing_filing_id": 4465,
+      "posted_at": "2026-08-13",
+      "progress_count": 6
+    },
     "cluster:HEAL:buy": {
       "completed_date": "2026-06-11",
       "completing_filing_id": 3817,
@@ -169,10 +187,10 @@
       "progress_count": 4
     },
     "cluster:IMPC:buy": {
-      "completed_date": "2026-07-28",
-      "completing_filing_id": 4265,
-      "posted_at": "2026-07-28",
-      "progress_count": 3
+      "completed_date": "2026-08-14",
+      "completing_filing_id": 4486,
+      "posted_at": "2026-08-14",
+      "progress_count": 4
     },
     "cluster:KLBF:buy": {
       "completed_date": "2026-07-10",

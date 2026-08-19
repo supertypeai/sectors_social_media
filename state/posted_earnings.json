@@ -90,6 +90,11 @@
       "latest_quarter": "Q2-2026",
       "posted_at": "2026-07-28"
     },
+    "earnings:DEWA:Q2-2026:spike": {
+      "earnings_growth": 1.6392274170541026,
+      "latest_quarter": "Q2-2026",
+      "posted_at": "2026-08-17"
+    },
     "earnings:ESSA:Q1-2026:spike": {
       "earnings_growth": 1.3633530122790984,
       "latest_quarter": "Q1-2026",
@@ -140,6 +145,11 @@
       "latest_quarter": "Q1-2026",
       "posted_at": "2026-07-16"
     },
+    "earnings:MLPT:Q2-2026:spike": {
+      "earnings_growth": 1.6313235975327303,
+      "latest_quarter": "Q2-2026",
+      "posted_at": "2026-08-13"
+    },
     "earnings:MORA:Q2-2026:spike": {
       "earnings_growth": 1.7691353243344523,
       "latest_quarter": "Q2-2026",
@@ -170,10 +180,20 @@
       "latest_quarter": "Q1-2026",
       "posted_at": "2026-06-30"
     },
+    "earnings:SMAR:Q2-2026:spike": {
+      "earnings_growth": 1.1914200348696729,
+      "latest_quarter": "Q2-2026",
+      "posted_at": "2026-08-18"
+    },
     "earnings:TINS:Q2-2026:spike": {
       "earnings_growth": 3.045558067897737,
       "latest_quarter": "Q2-2026",
       "posted_at": "2026-07-30"
+    },
+    "earnings:ULTJ:Q2-2026:spike": {
+      "earnings_growth": 1.3141554802826914,
+      "latest_quarter": "Q2-2026",
+      "posted_at": "2026-08-14"
     },
     "earnings:UNTR:Q1-2026:drop": {
       "earnings_growth": -0.7983467542942945,
