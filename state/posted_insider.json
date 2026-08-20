@@ -1,5 +1,11 @@
 {
   "signals": {
+    "chain:agoeng s sudhamek waspodo:GOOD:buy": {
+      "completed_date": "2026-08-20",
+      "completing_filing_id": 4512,
+      "posted_at": "2026-08-20",
+      "progress_count": 3
+    },
     "chain:andri hutama putra:CYBR:sell": {
       "completed_date": "2026-06-16",
       "completing_filing_id": 3853,
