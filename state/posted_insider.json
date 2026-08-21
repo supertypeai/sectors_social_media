@@ -204,6 +204,12 @@
       "posted_at": "2026-08-14",
       "progress_count": 4
     },
+    "cluster:INPS:sell": {
+      "completed_date": "2026-08-21",
+      "completing_filing_id": 4526,
+      "posted_at": "2026-08-21",
+      "progress_count": 3
+    },
     "cluster:KLBF:buy": {
       "completed_date": "2026-07-10",
       "completing_filing_id": 4079,
