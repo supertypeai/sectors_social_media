@@ -219,6 +219,11 @@
       "earnings_growth": -0.7983467542942945,
       "latest_quarter": "Q1-2026",
       "posted_at": "2026-07-02"
+    },
+    "earnings:UNTR:Q2-2026:drop": {
+      "earnings_growth": -0.9365669694069756,
+      "latest_quarter": "Q2-2026",
+      "posted_at": "2026-08-25"
     }
   }
 }
