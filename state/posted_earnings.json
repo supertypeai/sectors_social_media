@@ -55,6 +55,11 @@
       "latest_quarter": "Q1-2026",
       "posted_at": "2026-06-10"
     },
+    "earnings:CARE:Q2-2026:drop": {
+      "earnings_growth": -0.9283624890554847,
+      "latest_quarter": "Q2-2026",
+      "posted_at": "2026-08-26"
+    },
     "earnings:CASA:Q2-2026:spike": {
       "earnings_growth": 5.870378063980058,
       "latest_quarter": "Q2-2026",
