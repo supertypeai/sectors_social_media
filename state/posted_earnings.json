@@ -215,6 +215,11 @@
       "latest_quarter": "Q2-2026",
       "posted_at": "2026-07-30"
     },
+    "earnings:TPIA:Q2-2026:drop": {
+      "earnings_growth": -0.8835409786759953,
+      "latest_quarter": "Q2-2026",
+      "posted_at": "2026-08-27"
+    },
     "earnings:ULTJ:Q2-2026:spike": {
       "earnings_growth": 1.3141554802826914,
       "latest_quarter": "Q2-2026",
