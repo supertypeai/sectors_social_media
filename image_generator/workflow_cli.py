@@ -19,7 +19,6 @@ from .renderers.insider_roundup import InsiderRoundupRenderer
 from .renderers.macro_news import MacroNewsRenderer
 from .renderers.stock_performance import StockPerformanceRenderer
 from .render import BACKGROUND_DIR, clean_slug
-from .utils.slack import upload_posts_to_slack
 from .classification import (
     prepare_data_by_mcap,
     select_quarterly_data,
@@ -109,7 +108,6 @@ def _crosspost(base_content_type, row, caption, summarizer=None):
 @app.command("quarterly")
 def quarterly(
     output: Path = typer.Option(Path("output"), "--output", "-o"),
-    slack_channel: str | None = typer.Option(None, "--slack-channel")
 ):
     renderer = QuarterlyRenderer(output_dir=output)
 
@@ -133,17 +131,10 @@ def quarterly(
     path = renderer.render(data=payload)
     typer.echo(path.resolve())
 
-    if slack_channel:
-        upload_posts_to_slack(
-            [(path, "Quarterly lows update\n\n#IDX #StockMarket #Indonesia #SectorsApp")],
-            slack_channel=slack_channel,
-        )
-
 
 @app.command("companies-mover")
 def companies_mover(
     output: Path = typer.Option(Path("output"), "--output", "-o"),
-    slack_channel: str | None = typer.Option(None, "--slack-channel")
 ):
     renderer = TopCompaniesMoversRenderer(output_dir=output)
 
@@ -195,9 +186,6 @@ def companies_mover(
     except Exception as error:
         typer.echo(f"Queue write failed for companies-mover: {error}")
     _crosspost("companies-mover", row, caption, summarizer=summarizer)
-
-    if slack_channel:
-        upload_posts_to_slack([(path, caption)], slack_channel=slack_channel)
 
 
 def _crosspost_daily_news_agm(agm_image_urls: list[str]) -> None:
@@ -254,7 +242,6 @@ def _crosspost_daily_news_agm(agm_image_urls: list[str]) -> None:
 @app.command("agm")
 def agm(
     output: Path = typer.Option(Path("output"), "--output", "-o"),
-    slack_channel: str | None = typer.Option(None, "--slack-channel"),
 ):
     renderer = AGMRenderer(output_dir=output)
 
@@ -277,17 +264,12 @@ def agm(
             except Exception as error:
                 typer.echo(f"Queue write failed for agm page {i + 1}: {error}")
 
-        if slack_channel:
-            posts = [(path, agm_caption) for path in paths]
-            upload_posts_to_slack(posts, slack_channel=slack_channel)
-
     _crosspost_daily_news_agm(own_image_urls)
 
 
 @app.command("upcoming-dividend")
 def upcoming_dividend(
     output: Path = typer.Option(Path("output"), "--output", "-o"),
-    slack_channel: str | None = typer.Option(None, "--slack-channel"),
 ):
     renderer = UpcomingDividendRenderer(output_dir=output)
 
@@ -325,15 +307,10 @@ def upcoming_dividend(
         except Exception as error:
             typer.echo(f"Threads crosspost failed for upcoming-dividend: {error}")
 
-    if slack_channel:
-        posts = [(path, dividend_caption) for path in paths]
-        upload_posts_to_slack(posts, slack_channel=slack_channel)
-
         
 @app.command("dividend")
 def dividend(
     output: Path = typer.Option(Path("output"), "--output", "-o"),
-    slack_channel: str | None = typer.Option(None, "--slack-channel")
 ):
     renderer = DividendRenderer(output_dir=output)
     upcoming_dividends = fetch_idx_upcoming_dividend(to_df=False)
@@ -370,7 +347,7 @@ def dividend(
         raise typer.Exit(code=0)
 
     paths = []
-    path_to_record = {}
+    queued_records = []
 
     for record in payload:
         symbol = record["symbol"].replace(".JK", "")
@@ -386,29 +363,23 @@ def dividend(
         )
 
         paths.append((path, caption))
-        path_to_record[path] = record
         try:
-            _queue_post("dividend", path, caption, content_type=f"dividend-{clean_slug(symbol)}")
+            row = _queue_post("dividend", path, caption, content_type=f"dividend-{clean_slug(symbol)}")
+            if row:
+                queued_records.append(record)
         except Exception as error:
             typer.echo(f"Queue write failed for dividend {symbol}: {error}")
 
-    if slack_channel:
-        uploaded = upload_posts_to_slack(
-            paths, slack_channel=slack_channel
-        )
+    for record in queued_records:
+        key = f"{record['symbol']}:{record['ex_date']}"
+        state["dividends"][key] = {
+            "posted_at": date.today().isoformat(),
+            "symbol": record["symbol"],
+            "ex_date": record["ex_date"],
+        }
 
-        for path, _ in uploaded:
-            record = path_to_record[path]
-
-            key = f"{record['symbol']}:{record['ex_date']}"
-            state["dividends"][key] = {
-                "posted_at": date.today().isoformat(),
-                "symbol": record["symbol"],
-                "ex_date": record["ex_date"],
-            }
-
-        if uploaded:
-            save_dividend_state(state)
+    if queued_records:
+        save_dividend_state(state)
     
 
 _VOLUME_SPIKE_TAGS = "#IDX #StockMarket #Indonesia #VolumeSpike #SectorsApp"
@@ -433,7 +404,6 @@ def _volume_spike_stats(df_spike):
 @app.command("volume-spike")
 def volume_spike(
     output: Path = typer.Option(Path("output"), "--output", "-o"),
-    slack_channel: str | None = typer.Option(None, "--slack-channel"),
     theme: str = typer.Option(
         "rotate", "--theme",
         help="red, blue, orange, green, or 'rotate' to auto-advance through all four",
@@ -484,15 +454,10 @@ def volume_spike(
         typer.echo(f"Queue write failed for volume-spike: {error}")
     _crosspost("volume-spike", row, caption, summarizer=summarizer)
 
-    if slack_channel:
-        posts = [(paths[0], caption)] + [(path, "Volume Spike Alert") for path in paths[1:]]
-        upload_posts_to_slack(posts, slack_channel=slack_channel)
-
 
 @app.command("anomaly-changes")
 def anomaly_changes(
     output: Path = typer.Option(Path("output"), "--output", "-o"),
-    slack_channel: str | None = typer.Option(None, "--slack-channel"),
 ):
     renderer = AnomalyChangesRenderer(output_dir=output)
 
@@ -509,13 +474,6 @@ def anomaly_changes(
     paths = renderer.render(data=data)
     for path in paths:
         typer.echo(path.resolve())
-
-    if slack_channel:
-        posts = [
-            (path, "Anomaly Movers — Stocks outperforming or underperforming peers by 15%+\n\n#IDX #StockMarket #Indonesia #SectorsApp")
-            for path in paths
-        ]
-        upload_posts_to_slack(posts, slack_channel=slack_channel)
 
 
 def _crosspost_weekly_market(foreign_flow_image_urls: list[str]) -> None:
@@ -559,7 +517,6 @@ def _crosspost_weekly_market(foreign_flow_image_urls: list[str]) -> None:
 @app.command("foreign-flow")
 def foreign_flow(
     output: Path = typer.Option(Path("output"), "--output", "-o"),
-    slack_channel: str | None = typer.Option(None, "--slack-channel"),
 ):
     renderer = ForeignFlowRenderer(output_dir=output)
 
@@ -581,17 +538,12 @@ def foreign_flow(
             except Exception as error:
                 typer.echo(f"Queue write failed for foreign-flow page {i + 1}: {error}")
 
-        if slack_channel:
-            posts = [(path, flow_caption) for path in paths]
-            upload_posts_to_slack(posts, slack_channel=slack_channel)
-
     _crosspost_weekly_market(own_image_urls)
 
 
 @app.command("ownership")
 def ownership(
     output: Path = typer.Option(Path("output"), "--output", "-o"),
-    slack_channel: str | None = typer.Option(None, "--slack-channel"),
     limit: int = typer.Option(1, "--limit", help="Max ownership carousels to post this run."),
 ):
     renderer = OwnershipRenderer(output_dir=output)
@@ -609,39 +561,17 @@ def ownership(
         raise typer.Exit(code=0)
 
     typer.echo(f"Rendering {len(fires)} ownership carousel(s)...")
-    all_paths = []
-    slide_owner = {}
     for post in fires:
         slides = renderer.render(post)
-        base = str(post["symbol"]).upper().split(".")[0]
-        caption = (
-            f"Who really owns {base}?\n\n#IDX #StockMarket #Indonesia #Ownership #SectorsApp"
-        )
         for path in slides:
             typer.echo(path.resolve())
-            all_paths.append((path, caption))
-            slide_owner[path] = post
-
-    if slack_channel:
-        uploaded = upload_posts_to_slack(all_paths, slack_channel=slack_channel)
-
-        # Only burn state for names whose slides actually went out.
-        posted, seen = [], set()
-        for path, _ in uploaded:
-            post = slide_owner.get(path)
-            if post is not None and id(post) not in seen:
-                seen.add(id(post))
-                posted.append(post)
-        for post in posted:
-            record_ownership(state, post, date.today())
-        if posted:
-            save_ownership_state(state)
+        record_ownership(state, post, date.today())
+    save_ownership_state(state)
 
 
 @app.command("ownership-board")
 def ownership_board(
     output: Path = typer.Option(Path("output"), "--output", "-o"),
-    slack_channel: str | None = typer.Option(None, "--slack-channel"),
     top_n: int = typer.Option(10, "--top-n", help="How many companies on the leaderboard."),
 ):
     renderer = OwnershipBoardRenderer(output_dir=output)
@@ -662,23 +592,15 @@ def ownership_board(
     for path in paths:
         typer.echo(path.resolve())
 
-    if slack_channel:
-        caption = (
-            "Indonesian companies almost entirely owned by one shareholder\n\n"
-            "#IDX #StockMarket #Indonesia #Ownership #SectorsApp"
-        )
-        uploaded = upload_posts_to_slack([(p, caption) for p in paths], slack_channel=slack_channel)
-        if uploaded:
-            board = sorted(posts[:top_n], key=lambda p: p["controller"]["pct"] or 0, reverse=True)
-            symbols = [str(p["symbol"]).upper().split(".")[0] for p in board]
-            record_board(state, key, symbols, date.today())
-            save_ownership_board_state(state)
+    board = sorted(posts[:top_n], key=lambda p: p["controller"]["pct"] or 0, reverse=True)
+    symbols = [str(p["symbol"]).upper().split(".")[0] for p in board]
+    record_board(state, key, symbols, date.today())
+    save_ownership_board_state(state)
 
 
 @app.command("macro-news")
 def macro_news(
     output: Path = typer.Option(Path("output"), "--output", "-o"),
-    slack_channel: str | None = typer.Option(None, "--slack-channel"),
     render_scale: float = typer.Option(1.0, "--render-scale"),
     since: str | None = typer.Option(None, "--since", help="YYYY-MM-DD; defaults to today"),
 ):
@@ -763,13 +685,6 @@ def macro_news(
     except Exception as error:
         typer.echo(f"Queue write failed for macro-news slide: {error}")
 
-    if slack_channel:
-        caption = "Macro News\n\n#IDX #StockMarket #Indonesia #MacroNews #SectorsApp"
-        upload_posts_to_slack(
-            [(path, caption)], 
-            slack_channel=slack_channel
-        )
-
 
 _STOCK_PERF_TAGS = "#IDX #StockMarket #Indonesia #StockPerformance #SectorsApp"
 
@@ -852,7 +767,6 @@ def _crosspost_stock_performance(day: int, today: datetime) -> None:
 @app.command("stock-performance")
 def stock_performance(
     output: Path = typer.Option(Path("output"), "--output", "-o"),
-    slack_channel: str | None = typer.Option(None, "--slack-channel"),
     target_indices: list[str] = typer.Option(["LQ45", "JII70", "IDXBUMN20"], "--target-indices"),
     render_scale: float = typer.Option(1.0, "--render-scale"),
     day: int = typer.Option(7, "--day"),
@@ -948,9 +862,6 @@ def stock_performance(
         except Exception as error:
             typer.echo(f"Queue write failed for stock-performance {company_index}: {error}")
 
-        if slack_channel:
-            upload_posts_to_slack([(path, caption)], slack_channel=slack_channel)
-
     # Threads gets ONE combined post per cadence instead of the 3 separate
     # per-index posts IG receives across the week/month - see
     # threads_routing.py's "market_performance" policy: "don't separate by
@@ -968,7 +879,6 @@ def stock_performance(
 @app.command("weekly-movers")
 def weekly_movers(
     output: Path = typer.Option(Path("output"), "--output", "-o"),
-    slack_channel: str | None = typer.Option(None, "--slack-channel"),
 ):
     renderer = WinnersLosersRenderer(output_dir=output)
 
@@ -984,18 +894,10 @@ def weekly_movers(
     path = renderer.render(data=data)
     typer.echo(path.resolve())
 
-    if slack_channel:
-        caption = (
-            "Week's Winners & Losers — top 100 by market cap\n\n"
-            "#IDX #StockMarket #Indonesia #SectorsApp"
-        )
-        upload_posts_to_slack([(path, caption)], slack_channel=slack_channel)
-
 
 @app.command("sector-heatmap")
 def sector_heatmap(
     output: Path = typer.Option(Path("output"), "--output", "-o"),
-    slack_channel: str | None = typer.Option(None, "--slack-channel"),
 ):
     renderer = SectorHeatmapRenderer(output_dir=output)
 
@@ -1011,18 +913,10 @@ def sector_heatmap(
     path = renderer.render(data=data)
     typer.echo(path.resolve())
 
-    if slack_channel:
-        caption = (
-            "IDX Sector Heat Map — weekly performance by sector\n\n"
-            "#IDX #StockMarket #Indonesia #SectorsApp"
-        )
-        upload_posts_to_slack([(path, caption)], slack_channel=slack_channel)
-
 
 @app.command("lq45-ytd")
 def lq45_ytd(
     output: Path = typer.Option(Path("output"), "--output", "-o"),
-    slack_channel: str | None = typer.Option(None, "--slack-channel"),
     direction: str = typer.Option("worst", "--direction", help="'worst' or 'best'"),
 ):
     renderer = LQ45YTDRenderer(output_dir=output)
@@ -1036,19 +930,10 @@ def lq45_ytd(
     path = renderer.render(data=data)
     typer.echo(path.resolve())
 
-    if slack_channel:
-        verb = "Worst" if direction == "worst" else "Best"
-        caption = (
-            f"{verb} YTD performers in LQ45 — based on year-to-date close prices\n\n"
-            "#IDX #LQ45 #StockMarket #Indonesia #SectorsApp"
-        )
-        upload_posts_to_slack([(path, caption)], slack_channel=slack_channel)
-
 
 @app.command("insider-roundup")
 def insider_roundup(
     output: Path = typer.Option(Path("output"), "--output", "-o"),
-    slack_channel: str | None = typer.Option(None, "--slack-channel"),
 ):
     renderer = InsiderRoundupRenderer(output_dir=output)
 
@@ -1063,13 +948,6 @@ def insider_roundup(
     )
     path = renderer.render(data=data)
     typer.echo(path.resolve())
-
-    if slack_channel:
-        caption = (
-            "Insider Action This Week — top stocks insiders bought and sold\n\n"
-            "#IDX #InsiderTrading #Indonesia #SectorsApp"
-        )
-        upload_posts_to_slack([(path, caption)], slack_channel=slack_channel)
 
 
 if __name__ == "__main__":

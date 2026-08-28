@@ -18,12 +18,8 @@ on:
           - weekly-accumulation
           - weekly-distribution
           - weekly-bandar
-      channel:
-        description: 'Slack channel/DM ID, default = #visuals'
-        required: false
-        default: 'C04RC79U5NK'
       dry_run:
-        description: 'Skip Slack upload (generate PNGs only, downloadable as artifact)'
+        description: 'Skip DB/Storage queue write (generate PNGs only, downloadable as artifact)'
         required: false
         default: 'true'
         type: choice
@@ -62,19 +58,16 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "modes=${{ github.event.inputs.mode }}" >> "$GITHUB_OUTPUT"
-            echo "channel=${{ github.event.inputs.channel || 'C04RC79U5NK' }}" >> "$GITHUB_OUTPUT"
             echo "dry=${{ github.event.inputs.dry_run }}" >> "$GITHUB_OUTPUT"
 
           elif [ "${{ github.event.schedule }}" = "30 11 * * 5" ]; then
             # Weekly recap (Friday)
             echo "modes=broker-weekly" >> "$GITHUB_OUTPUT"
-            echo "channel=C04RC79U5NK" >> "$GITHUB_OUTPUT"
             echo "dry=false" >> "$GITHUB_OUTPUT"
 
           elif [ "${{ github.event.schedule }}" = "30 11 * * 1-5" ]; then
             # Daily bandar scorecard + trending movers
             echo "modes=broker-bandar broker-trending" >> "$GITHUB_OUTPUT"
-            echo "channel=C04RC79U5NK" >> "$GITHUB_OUTPUT"
             echo "dry=false" >> "$GITHUB_OUTPUT"
 
           else
@@ -86,7 +79,6 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
         run: |
           DRY_FLAG=""
           if [ "${{ steps.resolve.outputs.dry }}" = "true" ]; then
@@ -95,7 +87,6 @@ jobs:
           for MODE in ${{ steps.resolve.outputs.modes }}; do
             echo "::group::$MODE"
             python -m image_generator.cli --mode "$MODE" \
-              --slack-channel "${{ steps.resolve.outputs.channel }}" \
               --max-posts 3 $DRY_FLAG
             echo "::endgroup::"
           done

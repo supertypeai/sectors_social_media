@@ -4,11 +4,6 @@ on:
   # Scheduled trigger lives in cron-job.org (calls workflow_dispatch via GitHub REST API).
   # GH Actions cron suffered 5h+ queue drift; cron-job.org gives sub-minute precision.
   workflow_dispatch:
-    inputs:
-      channel:
-        description: 'Slack channel/DM ID, default = #visuals'
-        required: false
-        default: 'C04RC79U5NK'
 
 jobs:
   generate_and_post:
@@ -41,11 +36,9 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
-          CHANNEL="${{ github.event.inputs.channel || 'C04RC79U5NK' }}"
-          python -m image_generator.workflow_cli agm --slack-channel "$CHANNEL"
+          python -m image_generator.workflow_cli agm
 
       - name: Upload generated PNGs as artifact
         if: always()

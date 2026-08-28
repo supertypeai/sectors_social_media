@@ -20,12 +20,8 @@ on:
   # GH Actions cron suffered 5h+ queue drift; cron-job.org gives sub-minute precision.
   workflow_dispatch:
     inputs:
-      channel:
-        description: 'Slack channel/DM ID (paste U... for a DM to yourself, default = #visuals)'
-        required: false
-        default: 'C04RC79U5NK'
       dry_run:
-        description: 'Skip Slack upload (generate PNGs only, downloadable as artifact)'
+        description: 'Skip DB/Storage queue write (generate PNGs only, downloadable as artifact)'
         required: false
         default: 'false'
         type: choice
@@ -59,18 +55,12 @@ jobs:
           echo '${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}' > "$RUNNER_TEMP/gcp-key.json"
           echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/gcp-key.json" >> "$GITHUB_ENV"
 
-      - name: Resolve channel / dry-run
+      - name: Resolve dry-run
         id: resolve
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "channel=${{ github.event.inputs.channel || 'C04RC79U5NK' }}" >> "$GITHUB_OUTPUT"
-            if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
-              echo "dry_run=--dry-run" >> "$GITHUB_OUTPUT"
-            else
-              echo "dry_run=" >> "$GITHUB_OUTPUT"
-            fi
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            echo "dry_run=--dry-run" >> "$GITHUB_OUTPUT"
           else
-            echo "channel=C04RC79U5NK" >> "$GITHUB_OUTPUT"
             echo "dry_run=" >> "$GITHUB_OUTPUT"
           fi
 
@@ -78,7 +68,6 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_API_KEY2: ${{ secrets.GEMINI_API_KEY2 }}
           GEMINI_API_KEY3: ${{ secrets.GEMINI_API_KEY3 }}
@@ -86,7 +75,6 @@ jobs:
         run: |
           python -m image_generator.cli \
             --mode filings-plain \
-            --slack-channel "${{ steps.resolve.outputs.channel }}" \
             --max-posts 1 \
             ${{ steps.resolve.outputs.dry_run }}
 

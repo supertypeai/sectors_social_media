@@ -14,10 +14,6 @@ name: Generate and Post Ownership Concentration
 on:
   workflow_dispatch:
     inputs:
-      channel:
-        description: 'Slack channel/DM ID (default = #visuals)'
-        required: false
-        default: 'C04RC79U5NK'
       limit:
         description: 'Max carousels to post this run'
         required: false
@@ -51,10 +47,8 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
         run: |
           python -m image_generator.workflow_cli ownership \
-            --slack-channel "${{ github.event.inputs.channel || 'C04RC79U5NK' }}" \
             --limit "${{ github.event.inputs.limit || '1' }}"
 
       - name: Upload generated PNGs as artifact

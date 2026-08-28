@@ -890,6 +890,14 @@ def fetch_volume_spike_data():
 
     df_daily["date"] = pd.to_datetime(df_daily["date"])
     latest_date     = df_daily["date"].max()
+
+    # If the most recent trading data isn't from today (WIB), the market was
+    # likely closed for a holiday - skip rather than generate a "spike" off
+    # stale prior-day data mislabeled as today's.
+    today_wib = (datetime.now(timezone.utc) + timedelta(hours=7)).date()
+    if latest_date.date() != today_wib:
+        return {}
+
     df_daily_last   = df_daily[df_daily["date"] == latest_date].copy()
     df_daily_others = df_daily[df_daily["date"] != latest_date].copy()
 

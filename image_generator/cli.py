@@ -1,12 +1,7 @@
 import argparse
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-
-try:
-    from slack_sdk import WebClient
-except ImportError:
-    WebClient = None
 
 from .classification import (
     classify_news,
@@ -42,7 +37,6 @@ from .data import (
     fetch_weekly_distribution,
     load_records,
 )
-from .utils.slack import upload_posts_to_slack
 from .utils.io_helper import next_rotating_theme
 from .render import SocialImageRenderer, clean_slug, normalize_tags
 from .summarizer import NewsSummarizer
@@ -348,7 +342,7 @@ def _todays_broker_bandar_images():
     ONE Threads post instead of two separate ones."""
     from .social_queue import _client, TABLE, parse_image_urls
 
-    today = datetime.utcnow().strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     try:
         client = _client()
         result = (
@@ -481,7 +475,11 @@ def generate(args):
         carousel_cap = max(1, (args.max_posts or 4) // 2)  # 2 slides per carousel
 
         # Keep each carousel's paths together so we can persist state ONLY for
+        # items that actually queued successfully (replaces the old "did this
+        # upload to Slack" gate now that Slack is gone - queue_post succeeding
+        # is the new signal that a carousel is actually going out).
         rendered = []
+        queued = []
         dropped = []   # same (symbol, direction) runners-up suppressed this run
         # Only populated (and only crossposted) on the filings-signal branch -
         # filings-story has no Threads policy at all.
@@ -525,6 +523,7 @@ def generate(args):
                     content_type=f"filings-signal-{p['kind']}-{ident}-{p.get('direction')}",
                 )
                 if row:
+                    queued.append((p, rp))
                     crosspost_image_urls.extend(row.get("image_url") or [])
                     crosspost_captions.append(caption)
         else:  # filings-story
@@ -559,10 +558,12 @@ def generate(args):
                 caption = _insider_caption(p, "story", df, summarizer)
                 _extend_captioned(paths, rp, caption)
                 ident = clean_slug(p.get("base_symbol") or p.get("holder_name"))
-                _queue(
+                row = _queue(
                     "filings-story", rp, caption,
                     content_type=f"filings-story-{p['kind']}-{ident}-{p.get('direction')}",
                 )
+                if row:
+                    queued.append((p, rp))
 
         if args.dry_run:
             print(f"[dry-run] {len(paths)} image(s) generated; state NOT updated")
@@ -580,9 +581,7 @@ def generate(args):
             except Exception as error:
                 print(f"Threads crosspost failed for filings-signal: {error}")
 
-        uploaded = set(upload_posts_to_slack(paths, slack_channel=args.slack_channel)) if paths else set()
-        # A carousel counts as posted only if EVERY one of its slides uploaded.
-        posted = [(p, rp) for (p, rp) in rendered if rp and all(s in uploaded for s in rp)]
+        posted = queued
         posted_keys = {_dedupe_key(p) for p, _ in posted}
         if args.mode == "filings-signal":
             for p, _ in posted:
@@ -629,6 +628,7 @@ def generate(args):
         selections = fires[:carousel_cap]
         print(f"Becoming-insider feed: {len(fires)} fresh crossing(s); posting {len(selections)}")
         rendered = []
+        queued = []
         crosspost_image_urls = []
         crosspost_captions = []
         for e in selections:
@@ -645,6 +645,7 @@ def generate(args):
                 content_type=f"filings-becoming-{clean_slug(e.get('base_symbol'))}-{clean_slug(e.get('holder_name'))}",
             )
             if row:
+                queued.append((e, rp))
                 crosspost_image_urls.extend(row.get("image_url") or [])
                 crosspost_captions.append(caption)
 
@@ -663,8 +664,7 @@ def generate(args):
             except Exception as error:
                 print(f"Threads crosspost failed for filings-becoming: {error}")
 
-        uploaded = set(upload_posts_to_slack(paths, slack_channel=args.slack_channel)) if paths else set()
-        posted = [(e, rp) for (e, rp) in rendered if rp and all(s in uploaded for s in rp)]
+        posted = queued
         for e, _ in posted:
             triggers.record_becoming(state, e, run_date)
         triggers.save_state(state, state_path)
@@ -696,6 +696,7 @@ def generate(args):
         selections = fires[:carousel_cap]
         print(f"Earnings feed: {len(fires)} unposted report(s); posting {len(selections)}")
         rendered = []
+        queued = []
         crosspost_image_urls = []
         crosspost_captions = []
         for s in selections:
@@ -712,6 +713,7 @@ def generate(args):
                 content_type=f"earnings-report-{clean_slug(s.get('base_symbol'))}-{s.get('direction')}",
             )
             if row:
+                queued.append((s, rp))
                 crosspost_image_urls.extend(row.get("image_url") or [])
                 crosspost_captions.append(caption)
 
@@ -732,8 +734,7 @@ def generate(args):
             except Exception as error:
                 print(f"Threads crosspost failed for earnings-report: {error}")
 
-        uploaded = set(upload_posts_to_slack(paths, slack_channel=args.slack_channel)) if paths else set()
-        posted = [(s, rp) for (s, rp) in rendered if rp and all(p in uploaded for p in rp)]
+        posted = queued
         for s, _ in posted:
             triggers.record_earnings(state, s, run_date)
         triggers.save_state(state, state_path)
@@ -755,7 +756,7 @@ def generate(args):
             if rows:
                 # Label with the filing day (yesterday in WIB), not the run day.
                 run_day = (datetime.strptime(args.run_date, "%Y-%m-%d")
-                           if args.run_date else datetime.utcnow() + timedelta(hours=7))
+                           if args.run_date else datetime.now(timezone.utc) + timedelta(hours=7))
                 filing_day_label = (run_day - timedelta(days=1)).strftime("%d %B %Y")
                 caption = (f":memo: *Daily insider filings — {filing_day_label}*\n\n"
                            f"{_TAGS} #InsiderTrading #SectorsApp")
@@ -871,6 +872,14 @@ def generate(args):
                     target_date = args.date_label
             if not target_date:
                 target_date = fetch_latest_broker_date()
+                # Auto-resolved (not an explicit --date-label backfill) - if
+                # the latest broker data isn't from today (WIB), the market
+                # was likely closed for a holiday, so skip rather than
+                # regenerate yesterday's scorecard as if it were today's.
+                today_wib = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%Y-%m-%d")
+                if target_date and target_date != today_wib:
+                    print(f"Latest broker data ({target_date}) is not today ({today_wib}) - likely a market holiday, skipping.")
+                    target_date = None
             if not target_date:
                 print("No broker data available.")
                 df = None
@@ -905,6 +914,11 @@ def generate(args):
                 target_date = args.date_label
         if not target_date:
             target_date = fetch_latest_broker_date()
+            # Same holiday guard as broker-bandar above.
+            today_wib = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%Y-%m-%d")
+            if target_date and target_date != today_wib:
+                print(f"Latest broker data ({target_date}) is not today ({today_wib}) - likely a market holiday, skipping.")
+                target_date = None
         if target_date:
             print(f"Fetching trending movers for {target_date}...")
             payload = fetch_broker_trending_movers(target_date)
@@ -1074,13 +1088,11 @@ def generate(args):
         paths = paths[: args.max_posts]
 
     if args.dry_run:
-        print(f"[dry-run] {len(paths)} post(s) generated, skipping Slack upload")
+        print(f"[dry-run] {len(paths)} post(s) generated; state NOT updated")
         for item in paths:
             path = item[0] if isinstance(item, tuple) else item
             print(f"[dry-run] {Path(path).resolve()}")
         return
-
-    upload_posts_to_slack(paths, slack_channel=args.slack_channel)
 
 
 def build_parser():
@@ -1134,7 +1146,6 @@ def build_parser():
         "--filings-since",
         help="Supabase idx_filings timestamp lower bound, matching the notebook default.",
     )
-    parser.add_argument("--slack-channel", help="Slack channel ID to post results to (requires SLACK_BOT_TOKEN).")
     parser.add_argument(
         "--state-path",
         help="JSON dedup-state file for the signal/story feeds (default: state/posted_insider.json).",

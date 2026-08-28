@@ -3,11 +3,6 @@ name: Generate and Post Sector Heat Map
 on:
   # Scheduled trigger lives in cron-job.org (calls workflow_dispatch via GitHub REST API).
   workflow_dispatch:
-    inputs:
-      channel:
-        description: 'Slack channel/DM ID, default = #visuals'
-        required: false
-        default: 'C04RC79U5NK'
 
 jobs:
   generate_and_post:
@@ -35,10 +30,8 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
         run: |
-          CHANNEL="${{ github.event.inputs.channel || 'C04RC79U5NK' }}"
-          python -m image_generator.workflow_cli sector-heatmap --slack-channel "$CHANNEL"
+          python -m image_generator.workflow_cli sector-heatmap
 
       - name: Upload generated PNGs as artifact
         if: always()

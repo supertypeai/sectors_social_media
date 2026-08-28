@@ -16,12 +16,8 @@ on:
           - filings-daily
           - filings-context
           - filings-tags
-      channel:
-        description: 'Slack channel/DM ID (paste U... for a DM to yourself, default = #visuals)'
-        required: false
-        default: 'C04RC79U5NK'
       dry_run:
-        description: 'Skip Slack upload (generate PNGs only, downloadable as artifact)'
+        description: 'Skip DB/Storage queue write (generate PNGs only, downloadable as artifact)'
         required: false
         default: 'false'
         type: choice
@@ -60,15 +56,13 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
         run: |
           MODE="${{ github.event.inputs.mode || 'news-tier1' }}"
-          CHANNEL="${{ github.event.inputs.channel || 'C04RC79U5NK' }}"
           DRY_RUN_FLAG=""
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
             DRY_RUN_FLAG="--dry-run"
           fi
-          python -m image_generator.cli --mode "$MODE" --slack-channel "$CHANNEL" --max-posts 3 $DRY_RUN_FLAG
+          python -m image_generator.cli --mode "$MODE" --max-posts 3 $DRY_RUN_FLAG
 
       - name: Upload generated PNGs as artifact
         if: always()
