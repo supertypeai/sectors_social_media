@@ -55,6 +55,11 @@
       "latest_quarter": "Q1-2026",
       "posted_at": "2026-06-10"
     },
+    "earnings:BYAN:Q2-2026:spike": {
+      "earnings_growth": 0.8428258742264041,
+      "latest_quarter": "Q2-2026",
+      "posted_at": "2026-08-28"
+    },
     "earnings:CARE:Q2-2026:drop": {
       "earnings_growth": -0.9283624890554847,
       "latest_quarter": "Q2-2026",
