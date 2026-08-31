@@ -55,6 +55,11 @@
       "latest_quarter": "Q1-2026",
       "posted_at": "2026-06-10"
     },
+    "earnings:BRPT:Q2-2026:drop": {
+      "earnings_growth": -0.789384177266946,
+      "latest_quarter": "Q2-2026",
+      "posted_at": "2026-08-31"
+    },
     "earnings:BYAN:Q2-2026:spike": {
       "earnings_growth": 0.8428258742264041,
       "latest_quarter": "Q2-2026",
