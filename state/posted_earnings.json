@@ -1,5 +1,10 @@
 {
   "earnings": {
+    "earnings:AALI:Q2-2026:spike": {
+      "earnings_growth": 0.706659076099358,
+      "latest_quarter": "Q2-2026",
+      "posted_at": "2026-09-01"
+    },
     "earnings:ADES:Q1-2026:spike": {
       "earnings_growth": 0.7476779974009986,
       "latest_quarter": "Q1-2026",
