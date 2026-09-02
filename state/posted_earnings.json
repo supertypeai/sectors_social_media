@@ -130,6 +130,11 @@
       "latest_quarter": "Q1-2026",
       "posted_at": "2026-06-26"
     },
+    "earnings:ESSA:Q2-2026:spike": {
+      "earnings_growth": 0.8750159320641825,
+      "latest_quarter": "Q2-2026",
+      "posted_at": "2026-09-02"
+    },
     "earnings:FAPA:Q2-2026:spike": {
       "earnings_growth": 1.091537617991127,
       "latest_quarter": "Q2-2026",
