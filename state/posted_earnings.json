@@ -150,6 +150,11 @@
       "latest_quarter": "Q1-2026",
       "posted_at": "2026-07-15"
     },
+    "earnings:IMPC:Q2-2026:spike": {
+      "earnings_growth": 0.7034178206388723,
+      "latest_quarter": "Q2-2026",
+      "posted_at": "2026-09-04"
+    },
     "earnings:INCO:Q1-2026:spike": {
       "earnings_growth": 1.0444295796064862,
       "latest_quarter": "Q1-2026",
