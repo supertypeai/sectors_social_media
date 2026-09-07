@@ -215,6 +215,11 @@
       "latest_quarter": "Q2-2026",
       "posted_at": "2026-07-31"
     },
+    "earnings:PGUN:Q2-2026:drop": {
+      "earnings_growth": -0.6840663729669935,
+      "latest_quarter": "Q2-2026",
+      "posted_at": "2026-09-07"
+    },
     "earnings:RAJA:Q2-2026:spike": {
       "earnings_growth": 2.3646006076381325,
       "latest_quarter": "Q2-2026",
