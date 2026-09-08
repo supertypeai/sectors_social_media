@@ -16,6 +16,10 @@ OUTPUT_DIR = ROOT_DIR / "output"
 LOGO_CACHE_DIR = ROOT_DIR / "logos"
 FONT_DIR = ROOT_DIR / "font"
 
+# Share of the disc diameter left as empty margin on each side when fitting a
+# company logo. See fit_logo_in_disc().
+LOGO_PAD_RATIO = 0.12
+
 COLORS = {
     "ink": "#2f3137",
     "dark": "#525564",
@@ -344,6 +348,32 @@ def draw_progress_bar(draw, xy, width, height, fraction, fill, track="#ececec"):
         draw.rectangle((x, y, x + fill_w, y + height), fill=fill)
 
 
+def fit_logo_in_disc(logo_img, size, pad_ratio=LOGO_PAD_RATIO,
+                     plate="#ffffff", outline="#eeeeee"):
+    """Compose a company logo onto a circular plate without cropping it.
+
+    Bucket logos are no longer uniformly circular badges: some are squircles
+    that fill the canvas edge-to-edge, some are free-form glyphs whose arms
+    reach the border. Centre-cropping those (the old ImageOps.fit + circular
+    mask) sliced their corners off, so instead scale the whole mark down to
+    fit inside the disc and leave `pad_ratio` of the diameter as margin.
+
+    Pass plate=None to skip the white disc (logo alone, transparent behind).
+    """
+    out = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    if plate:
+        ImageDraw.Draw(out).ellipse(
+            (0, 0, size - 1, size - 1), fill=plate, outline=outline, width=1
+        )
+    inner = max(1, int(round(size * (1 - 2 * pad_ratio))))
+    scale = inner / max(logo_img.width, logo_img.height)
+    w = max(1, round(logo_img.width * scale))
+    h = max(1, round(logo_img.height * scale))
+    fitted = logo_img.resize((w, h), Image.Resampling.LANCZOS)
+    out.paste(fitted, ((size - w) // 2, (size - h) // 2), fitted)
+    return out
+
+
 def pct(value):
     try:
         return f"{float(value):.2f}%"
@@ -580,20 +610,10 @@ class SocialImageRenderer(InsiderEarningsRendererMixin):
                     pass
 
         if logo_img:
-            # Resize and mask to circle
-            logo_img = ImageOps.fit(logo_img, (size, size), Image.Resampling.LANCZOS)
-            mask = Image.new("L", (size, size), 0)
-            draw_mask = ImageDraw.Draw(mask)
-            draw_mask.ellipse((0, 0, size, size), fill=255)
-            
-            circular_logo = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-            circular_logo.paste(logo_img, (0, 0), mask)
-            
-            # Draw a subtle border/background for the logo
-            draw = ImageDraw.Draw(image)
-            draw.ellipse((x, y, x + size, y + size), fill="#ffffff", outline="#eeeeee", width=1)
-            
-            image.paste(circular_logo, (x, y), circular_logo)
+            # Scale the whole mark into the disc (never centre-crop it) so
+            # squircle / free-form logos keep their edges. See fit_logo_in_disc.
+            composed = fit_logo_in_disc(logo_img, size)
+            image.paste(composed, (x, y), composed)
         else:
             # Fallback to symbol initials if logo not found
             draw = ImageDraw.Draw(image)

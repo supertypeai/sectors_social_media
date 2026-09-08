@@ -13,7 +13,7 @@ from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 import requests
 from PIL import Image
 
-from image_generator.render import SocialImageRenderer, FONT_DIR
+from image_generator.render import SocialImageRenderer, FONT_DIR, fit_logo_in_disc
 
 
 # ── palette ───────────────────────────────────────────────────────────────────
@@ -169,13 +169,9 @@ class VolumeSpikeRenderer(SocialImageRenderer):
                 img = Image.open(BytesIO(resp.content)).convert('RGBA')
                 logo_path.parent.mkdir(parents=True, exist_ok=True)
                 logo_path.write_bytes(resp.content)
-            size = 80
-            img = img.resize((size, size), Image.LANCZOS)
-            from PIL import ImageDraw as _ID
-            mask = Image.new('L', (size, size), 0)
-            _ID.Draw(mask).ellipse((0, 0, size, size), fill=255)
-            img.putalpha(mask)
-            return np.array(img)
+            # Scale the whole mark into the disc rather than centre-cropping it,
+            # so squircle / free-form logos keep their edges.
+            return np.array(fit_logo_in_disc(img, 80))
         except Exception:
             return None
 

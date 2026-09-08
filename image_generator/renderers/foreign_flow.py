@@ -11,7 +11,10 @@ from pathlib import Path
 import requests
 from PIL import Image, ImageDraw, ImageOps
 
-from ..render import SocialImageRenderer, font, ellipsize_to_width, format_date_range, LOGO_CACHE_DIR
+from ..render import (
+    SocialImageRenderer, font, ellipsize_to_width, format_date_range,
+    LOGO_CACHE_DIR, fit_logo_in_disc,
+)
 
 
 class ForeignFlowRenderer(SocialImageRenderer):
@@ -43,15 +46,7 @@ class ForeignFlowRenderer(SocialImageRenderer):
                 img = None
         if img is None:
             return None
-        img = ImageOps.fit(img, (size, size), Image.Resampling.LANCZOS)
-        mask = Image.new("L", (size, size), 0)
-        ImageDraw.Draw(mask).ellipse((0, 0, size, size), fill=255)
-        out = Image.new("RGBA", (size, size), (255, 255, 255, 0))
-        out.paste(img, (0, 0), mask)
-        ring = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-        ImageDraw.Draw(ring).ellipse((0, 0, size - 1, size - 1), outline="#eeeeee", width=1)
-        out.alpha_composite(ring)
-        return out
+        return fit_logo_in_disc(img, size)
 
     def _story_wrap(self, card, H=1920):
         """Letterbox the finished 1080x1350 (4:5) card into a 1080xH (9:16) story
