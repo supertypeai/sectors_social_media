@@ -23,12 +23,18 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
-Create `.env` with Supabase credentials:
+Copy `.env.example` to `.env` and fill it in:
 
 ```env
 SUPABASE_URL=...
 SUPABASE_KEY=...
+MAILROOM_API_URL=https://mailroom.supertype.ai/api/v1
+MAILROOM_API_KEY=...
 ```
+
+Supabase is the source of filings/news/price data. Mailroom hosts the generated
+images and owns the post queue and the publishing to Instagram/Threads — this
+repo only renders and queues.
 
 Generate directly from Supabase:
 

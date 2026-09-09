@@ -46,16 +46,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Write GCP credentials
-        run: |
-          echo '${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}' > "$RUNNER_TEMP/gcp-key.json"
-          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/gcp-key.json" >> "$GITHUB_ENV"
-
       - name: Run Social Image Generator
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          MAILROOM_API_URL: ${{ secrets.MAILROOM_API_URL }}
+          MAILROOM_API_KEY: ${{ secrets.MAILROOM_API_KEY }}
         run: |
           MODE="${{ github.event.inputs.mode || 'news-tier1' }}"
           DRY_RUN_FLAG=""
