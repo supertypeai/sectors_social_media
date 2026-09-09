@@ -66,6 +66,60 @@ def post_type_for(content_type: str) -> str | None:
     return POST_TYPE_BY_CONTENT_TYPE.get(content_type)
 
 
+# Which Mailroom content group a content type belongs to - the theme, not the
+# generator job, so the dashboard rolls up by subject rather than listing all
+# 25 content types. The group also becomes a folder in the stored image's
+# object key, so it has to be a valid slug: lowercase, [a-z0-9-], max 40.
+#
+# A content type's IG post and its Threads crosspost share a group, so a theme
+# reads as one group across both platforms.
+CONTENT_GROUP_BY_CONTENT_TYPE: dict[str, str] = {
+    # Insider filings, in all their renderings.
+    "filings-becoming": "filings",
+    "filings-signal": "filings",
+    "filings-story": "filings",
+    "filings-plain": "filings",
+    "filings-daily": "filings",
+    "filings-context": "filings",
+    "filings-tags": "filings",
+    "insider-roundup": "filings",
+
+    # Company financials and payouts.
+    "earnings-report": "financial",
+    "dividend": "financial",
+    "upcoming-dividend": "financial",
+
+    # Price and flow movements.
+    "volume-spike": "volume",
+    "stock-performance": "volume",
+    "companies-mover": "volume",
+    "foreign-flow": "volume",
+    "weekly-accumulation": "volume",
+    "weekly-distribution": "volume",
+
+    # Broker activity, daily and weekly.
+    "broker-bandar": "broker",
+    "broker-trending": "broker",
+    "broker-weekly": "broker",
+    "weekly-bandar": "broker",
+
+    "news-tier1": "news",
+    "news-tier2": "news",
+    "macro-news": "news",
+
+    "agm": "news",
+}
+
+
+def content_group_for(content_type: str) -> str:
+    """The content group a content type is filed under. Falls back to the
+    content type itself, so a new one added to POST_TYPE_BY_CONTENT_TYPE but
+    forgotten here still gets grouped - as its own group, visibly, rather
+    than silently landing ungrouped.
+    """
+    return CONTENT_GROUP_BY_CONTENT_TYPE.get(content_type, content_type)
+
+
 # When a content type should actually post, independent of when its
 # generator runs (e.g. filings-becoming generates Mon-Fri 20:30 WIB, but
 # posts the NEXT day at 10:00 WIB - spreads the day's content out for the

@@ -223,7 +223,7 @@ def queue_post(
     first. Defaults to base_content_type for genuinely one-per-run digests
     (news-tier1, macro-news, broker-bandar, ...).
     """
-    from .post_routing import post_type_for
+    from .post_routing import content_group_for, post_type_for
 
     post_type = post_type_for(base_content_type)
     if post_type is None:
@@ -234,12 +234,11 @@ def queue_post(
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
     slug = content_type or base_content_type
-    # The group is the routing-table key, not `slug` - slug carries a per-item
-    # suffix (earnings-report-BBCA-up) that would make a group per symbol.
+    # The group is the theme, not `slug` - slug carries a per-item suffix
+    # (earnings-report-BBCA-up) that would make a group per symbol.
+    group = content_group_for(base_content_type)
     image_urls = [
-        upload_image_to_storage(
-            p, dest_name=f"{slug}_{stamp}_{i + 1}.jpg", content_group=base_content_type
-        )
+        upload_image_to_storage(p, dest_name=f"{slug}_{stamp}_{i + 1}.jpg", content_group=group)
         for i, p in enumerate(image_paths)
     ]
 
@@ -250,7 +249,7 @@ def queue_post(
         image_url=image_urls,
         caption=caption,
         scheduled_at=scheduled_at,
-        content_group=base_content_type,
+        content_group=group,
     )
 
 
@@ -271,6 +270,7 @@ def crosspost_to_threads(
     Returns None (no-op, no queue write) when base_content_type has no Threads
     policy, or when there are no images to attach.
     """
+    from .post_routing import content_group_for
     from .threads_routing import generic_caption, policy_for, threads_scheduled_at_for
 
     policy = policy_for(base_content_type)
@@ -298,9 +298,9 @@ def crosspost_to_threads(
         image_url=image_urls,
         caption=final_caption,
         scheduled_at=scheduled_at or threads_scheduled_at_for(base_content_type),
-        # Same group as the IG post it reuses the images from, so a content
-        # type reads as one group across both platforms.
-        content_group=base_content_type,
+        # Same group as the IG post it reuses the images from, so a theme
+        # reads as one group across both platforms.
+        content_group=content_group_for(base_content_type),
     )
 
 
