@@ -1,30 +1,33 @@
-"""Generator-side helper for the social_post_queue table (Supabase) and the
-image Storage bucket that backs it.
+"""Generator-side helper for the Mailroom social API.
 
-This is the single write path the generator jobs use to hand a rendered
-post off to the publisher (image_generator/publisher.py). The queue table
-already exists in Supabase - this module never migrates or creates schema.
+This is the single write path the generator jobs use to hand a rendered post
+off: images go to POST /social/uploads, queue rows to POST /social/posts.
+Mailroom owns the queue, the image hosting and the publishing that the
+Supabase `social_post_queue` table + publisher.py used to do.
 """
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
 
-import os
+import hashlib
 import re
 
+from . import mailroom
 
-TABLE = "social_post_queue"
-STORAGE_BUCKET = "social_media_generation"  # legacy Supabase bucket - existing queue rows still point here, no longer written to
+
 VALID_PLATFORMS = {"ig", "threads"}
 VALID_POST_TYPES = {"feed", "story"}
 
-# Generated images now upload here instead of Supabase Storage - same bucket
-# already used (read-only) for company logos, confirmed public. Requires
-# GOOGLE_APPLICATION_CREDENTIALS (a service-account key with write access to
-# this bucket) in the environment.
-GCS_BUCKET = "sectorsapp-sea"
-GCS_PREFIX = "social_media"
+# Mailroom rejects a scheduled_at more than 60s in the past, and that 422 is
+# produced *inside* its idempotency wrapper - so it gets cached under our key
+# and replayed for the rest of the day. A "same_day" policy whose hour has
+# already passed (agm 19:00 WIB generated at 21:00) would hit exactly that, so
+# anything not comfortably in the future is sent as "now" instead.
+SCHEDULE_MIN_LEAD_S = 120
+
+# Meta's own ceiling, which Mailroom enforces at queue time.
+IG_MAX_CAPTION_CHARS = 2200
 
 # Meta's real per-platform carousel caps (2026): IG tops out at 10 children,
 # Threads at 20. Exceeding these doesn't get politely rejected per-item - the
@@ -76,37 +79,23 @@ def sanitize_caption(caption: str | None) -> str | None:
     return caption.strip()
 
 
-def _client():
-    try:
-        from dotenv import load_dotenv
-
-        load_dotenv()
-    except ModuleNotFoundError:
-        pass
-
-    from supabase import create_client
-
-    url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_KEY")
-    if not url or not key:
-        raise RuntimeError("SUPABASE_URL and SUPABASE_KEY are required.")
-
-    return create_client(url, key)
+def _normalize(post: dict) -> dict:
+    """Mailroom returns `image_urls`; every call site in this repo reads
+    `image_url` (the old queue column name). Alias it once, here."""
+    post["image_url"] = post.get("image_urls") or []
+    return post
 
 
-# Kept for existing importers (publisher.py) - same client, old name.
-_service_client = _client
-
-
-def upload_image_to_storage(local_path, bucket: str = GCS_BUCKET, dest_name: str | None = None) -> str:
+def upload_image_to_storage(local_path, bucket: str | None = None, dest_name: str | None = None) -> str:
     """Convert a local image to JPEG (Instagram requires JPEG) and upload it
-    to the GCS bucket (under GCS_PREFIX), returning its public URL. `bucket`
-    is kept as a parameter for compatibility with existing call sites, but
-    every caller in this codebase uses the default (GCS_BUCKET) - it's no
-    longer a Supabase Storage bucket name.
+    to Mailroom, returning its permanent public URL. `bucket` is kept only so
+    existing call sites keep working - Mailroom picks the storage location.
+
+    The Idempotency-Key is the JPEG's own content hash, so re-running a
+    generator on the same input replays the first upload instead of storing
+    the same bytes again under a second URL.
     """
     from PIL import Image
-    from google.cloud import storage as gcs_storage
 
     local_path = Path(local_path)
     dest_name = dest_name or f"{local_path.stem}.jpg"
@@ -114,12 +103,14 @@ def upload_image_to_storage(local_path, bucket: str = GCS_BUCKET, dest_name: str
     image = Image.open(local_path).convert("RGB")
     buffer = BytesIO()
     image.save(buffer, format="JPEG", quality=95)
-    buffer.seek(0)
+    payload = buffer.getvalue()
 
-    gcs_client = gcs_storage.Client()
-    blob = gcs_client.bucket(bucket).blob(f"{GCS_PREFIX}/{dest_name}")
-    blob.upload_from_string(buffer.read(), content_type="image/jpeg")
-    return f"https://storage.googleapis.com/{bucket}/{GCS_PREFIX}/{dest_name}"
+    result = mailroom.post(
+        "/social/uploads",
+        idempotency_key=f"upload:{hashlib.sha256(payload).hexdigest()}",
+        files={"file": (dest_name, payload, "image/jpeg")},
+    )
+    return result["url"]
 
 
 def upsert_post(
@@ -130,21 +121,19 @@ def upsert_post(
     caption: str | None,
     scheduled_at: str | None = None,
 ) -> dict:
-    """Queue one platform-post for the publisher to pick up.
+    """Queue one platform-post for Mailroom's publisher to pick up.
 
-    `image_url` may be a single URL string or a list of URLs (2+ means an IG
-    carousel post - see publisher._publish_ig). image_url is a native
-    Postgres array column (text[]), so the list is passed straight through
-    to supabase-py rather than JSON-encoded.
+    `image_url` may be a single URL string or a list of URLs (2+ means a
+    carousel post).
 
     Idempotent on (platform, post_type, content_type, calendar day of
-    scheduled_at): if a row already exists for that key on that day
-    (regardless of its status), it's returned unchanged instead of
-    inserting a duplicate - so re-running a generator job for "today" is
-    always safe to repeat.
+    scheduled_at) via Mailroom's Idempotency-Key: a repeat within 24h replays
+    the original response instead of queueing a duplicate, so re-running a
+    generator job for "today" is always safe to repeat.
 
-    `scheduled_at` accepts an ISO 8601 string; defaults to now (UTC), which
-    makes the row due for the very next publisher run.
+    `scheduled_at` accepts an ISO 8601 string and defaults to now (UTC). It is
+    always sent explicitly - omitting it would leave a permanent draft that
+    never publishes - and a time already in the past is sent as now.
     """
     if platform not in VALID_PLATFORMS:
         raise ValueError(f"platform must be one of {VALID_PLATFORMS}, got {platform!r}")
@@ -167,38 +156,36 @@ def upsert_post(
     if len(image_urls) > carousel_limit:
         image_urls = image_urls[:carousel_limit]
 
-    scheduled_at = scheduled_at or datetime.now(timezone.utc).isoformat()
-    day = date.fromisoformat(scheduled_at[:10])
-    day_start = f"{day.isoformat()}T00:00:00"
-    day_end = f"{(day + timedelta(days=1)).isoformat()}T00:00:00"
+    # Mailroom type-checks caption as a string, so a null one is a 422 - and it
+    # rejects an IG caption over the Meta limit outright, where the old queue
+    # just stored it. Both would drop the whole post.
+    caption = sanitize_caption(caption)
+    if platform == "ig" and caption and len(caption) > IG_MAX_CAPTION_CHARS:
+        caption = caption[:IG_MAX_CAPTION_CHARS - 1].rstrip() + "…"
 
-    client = _client()
+    now = datetime.now(timezone.utc)
+    when = datetime.fromisoformat(scheduled_at) if scheduled_at else now
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    if when.timestamp() < now.timestamp() + SCHEDULE_MIN_LEAD_S:
+        when = now
 
-    existing = (
-        client.table(TABLE)
-        .select("*")
-        .eq("platform", platform)
-        .eq("post_type", post_type)
-        .eq("content_type", content_type)
-        .gte("scheduled_at", day_start)
-        .lt("scheduled_at", day_end)
-        .execute()
-    )
-    if existing.data:
-        return existing.data[0]
+    # The dedupe day is the TARGET day, not today: filings-becoming generates
+    # on Monday and posts on Tuesday, and Tuesday's slot is the one to hold.
+    day = when.astimezone(timezone.utc).date().isoformat()
 
-    row = {
-        "platform": platform,
-        "post_type": post_type,
-        "content_type": content_type,
-        "image_url": image_urls,
-        "caption": sanitize_caption(caption),
-        "status": "pending",
-        "attempts": 0,
-        "scheduled_at": scheduled_at,
-    }
-    result = client.table(TABLE).insert(row).execute()
-    return result.data[0]
+    return _normalize(mailroom.post(
+        "/social/posts",
+        idempotency_key=f"{platform}:{post_type}:{content_type}:{day}",
+        json={
+            "platform": platform,
+            "post_type": post_type,
+            "content_type": content_type,
+            "image_urls": image_urls,
+            **({"caption": caption} if caption else {}),
+            "scheduled_at": when.isoformat(),
+        },
+    ))
 
 
 def queue_post(
@@ -211,9 +198,9 @@ def queue_post(
 ) -> dict | None:
     """Convenience wrapper for generator call sites: looks up post_type from
     post_routing.post_type_for(base_content_type), uploads each local image
-    to Storage, and upserts the queue row - or does nothing at all when the
+    to Mailroom, and queues the post - or does nothing at all when the
     content type isn't mapped to 'feed'/'story' yet (returns None; no upload,
-    no DB write, no scheduled_at set).
+    no queue write, no scheduled_at set).
 
     `base_content_type` is the routing-table key (e.g. "earnings-report").
     `content_type` is what's actually stored on the row; pass a per-item
@@ -264,7 +251,7 @@ def crosspost_to_threads(
     the caption strategy ('generic' template vs 'paraphrase' of `caption`
     via summarizer.paraphrase_caption), and the Threads-specific schedule.
 
-    Returns None (no-op, no DB write) when base_content_type has no Threads
+    Returns None (no-op, no queue write) when base_content_type has no Threads
     policy, or when there are no images to attach.
     """
     from .threads_routing import generic_caption, policy_for, threads_scheduled_at_for
@@ -297,11 +284,38 @@ def crosspost_to_threads(
     )
 
 
+def find_posts(
+    platform: str = "ig",
+    content_type: str | None = None,
+    content_type_prefix: str | None = None,
+    since: str | None = None,
+) -> list[dict]:
+    """Already-queued posts, oldest first (Mailroom lists newest first; the
+    crosspost call sites care about carousel page order).
+
+    Mailroom's content_type filter is exact-match only, so a prefix (the
+    paginated "macro-news-1", "macro-news-2", ... content types) is filtered
+    here instead. `since` filters on created_at, as the old queries did.
+    """
+    params = {"platform": platform, "limit": 500}
+    if content_type:
+        params["content_type"] = content_type
+    if since:
+        params["since"] = since
+
+    posts = mailroom.get("/social/posts", params=params).get("data") or []
+    # Mailroom's retention sweep deletes the objects behind image_urls; a
+    # crosspost built from those URLs would fail at publish time, when Meta
+    # fetches them.
+    posts = [p for p in posts if not p.get("assets_purged_at")]
+    if content_type_prefix:
+        posts = [p for p in posts if (p.get("content_type") or "").startswith(content_type_prefix)]
+    return [_normalize(p) for p in reversed(posts)]
+
+
 def parse_image_urls(image_url_field) -> list[str]:
-    """Normalize the image_url column back into a list of URLs. image_url is
-    a native Postgres array (text[]), so postgrest-py already deserializes
-    it to a Python list - this just tolerates a bare string too, in case a
-    row was ever written directly rather than through upsert_post."""
+    """Normalize a post's image_url field back into a list of URLs. Mailroom
+    already returns a list - this just tolerates a bare string too."""
     if not image_url_field:
         return []
     if isinstance(image_url_field, list):

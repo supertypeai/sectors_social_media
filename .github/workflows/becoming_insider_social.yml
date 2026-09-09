@@ -49,11 +49,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Write GCP credentials
-        run: |
-          echo '${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}' > "$RUNNER_TEMP/gcp-key.json"
-          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/gcp-key.json" >> "$GITHUB_ENV"
-
       - name: Resolve dry-run
         id: resolve
         run: |
@@ -67,6 +62,8 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          MAILROOM_API_URL: ${{ secrets.MAILROOM_API_URL }}
+          MAILROOM_API_KEY: ${{ secrets.MAILROOM_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_API_KEY2: ${{ secrets.GEMINI_API_KEY2 }}
           GEMINI_API_KEY3: ${{ secrets.GEMINI_API_KEY3 }}

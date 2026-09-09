@@ -340,27 +340,17 @@ def _todays_broker_bandar_images():
     (which always runs right after it, in the same broker_social.yml job's
     `for MODE in broker-bandar broker-trending` loop) can combine both into
     ONE Threads post instead of two separate ones."""
-    from .social_queue import _client, TABLE, parse_image_urls
+    from .social_queue import find_posts, parse_image_urls
 
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     try:
-        client = _client()
-        result = (
-            client.table(TABLE)
-            .select("image_url")
-            .eq("platform", "ig")
-            .eq("content_type", "broker-bandar")
-            .gte("created_at", f"{today}T00:00:00")
-            .order("created_at", desc=True)
-            .limit(1)
-            .execute()
-        )
+        posts = find_posts(content_type="broker-bandar", since=f"{today}T00:00:00Z")
     except Exception as error:
         print(f"Threads crosspost lookup failed for broker-bandar: {error}")
         return []
-    if not result.data:
+    if not posts:
         return []
-    return parse_image_urls(result.data[0].get("image_url"))
+    return parse_image_urls(posts[-1].get("image_url"))
 
 
 def _earnings_caption(s, summarizer=None):

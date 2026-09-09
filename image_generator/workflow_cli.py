@@ -195,38 +195,19 @@ def _crosspost_daily_news_agm(agm_image_urls: list[str]) -> None:
     (18:00 WIB vs macro-news 15:00 and news-tier1 12:00), so it's always the
     trigger point - this fires even on a day with zero AGM data, since the
     other two should still get their combined post."""
-    from .social_queue import _client, TABLE, parse_image_urls
+    from .social_queue import find_posts, parse_image_urls
 
-    today = datetime.now().strftime("%Y-%m-%d")
+    since = f"{datetime.now().strftime('%Y-%m-%d')}T00:00:00Z"
     combined = []
     try:
-        client = _client()
-        # news-tier1 is a single row per run - exact content_type match.
-        result = (
-            client.table(TABLE)
-            .select("image_url")
-            .eq("platform", "ig")
-            .eq("content_type", "news-tier1")
-            .gte("created_at", f"{today}T00:00:00")
-            .order("created_at", desc=True)
-            .limit(1)
-            .execute()
-        )
-        if result.data:
-            combined.extend(parse_image_urls(result.data[0].get("image_url")))
+        # news-tier1 is a single post per run - exact content_type match.
+        posts = find_posts(content_type="news-tier1", since=since)
+        if posts:
+            combined.extend(parse_image_urls(posts[-1].get("image_url")))
 
         # macro-news paginates (macro-news-1, macro-news-2, ...).
-        result = (
-            client.table(TABLE)
-            .select("image_url,created_at")
-            .eq("platform", "ig")
-            .like("content_type", "macro-news-%")
-            .gte("created_at", f"{today}T00:00:00")
-            .order("created_at")
-            .execute()
-        )
-        for row in result.data or []:
-            combined.extend(parse_image_urls(row.get("image_url")))
+        for post in find_posts(content_type_prefix="macro-news-", since=since):
+            combined.extend(parse_image_urls(post.get("image_url")))
     except Exception as error:
         typer.echo(f"Threads crosspost lookup failed for daily news/AGM: {error}")
 
@@ -483,25 +464,15 @@ def _crosspost_weekly_market(foreign_flow_image_urls: list[str]) -> None:
     broker-weekly's Friday 18:45), so it's always the later trigger - this
     fires even on a week with no foreign-flow data, since broker-weekly
     should still get its post."""
-    from .social_queue import _client, TABLE, parse_image_urls
+    from .social_queue import find_posts, parse_image_urls
 
-    since = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")
+    since = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%dT00:00:00Z")
     combined = []
     try:
-        client = _client()
-        # broker-weekly is a single row per run - exact content_type match.
-        result = (
-            client.table(TABLE)
-            .select("image_url")
-            .eq("platform", "ig")
-            .eq("content_type", "broker-weekly")
-            .gte("created_at", f"{since}T00:00:00")
-            .order("created_at", desc=True)
-            .limit(1)
-            .execute()
-        )
-        if result.data:
-            combined.extend(parse_image_urls(result.data[0].get("image_url")))
+        # broker-weekly is a single post per run - exact content_type match.
+        posts = find_posts(content_type="broker-weekly", since=since)
+        if posts:
+            combined.extend(parse_image_urls(posts[-1].get("image_url")))
     except Exception as error:
         typer.echo(f"Threads crosspost lookup failed for broker-weekly: {error}")
 
@@ -732,28 +703,19 @@ def _crosspost_stock_performance(day: int, today: datetime) -> None:
     """Combine this cadence's per-index IG posts (LQ45/IDXBUMN20/JII70,
     generated on 3 separate days) into ONE Threads carousel - see the
     stock_performance() call site above for why."""
-    from .social_queue import _client, TABLE, parse_image_urls
+    from .social_queue import find_posts, parse_image_urls
 
     lookback_days = 3
-    since = (today - timedelta(days=lookback_days)).strftime("%Y-%m-%dT00:00:00")
+    since = (today - timedelta(days=lookback_days)).strftime("%Y-%m-%dT00:00:00Z")
     try:
-        client = _client()
-        result = (
-            client.table(TABLE)
-            .select("image_url,created_at")
-            .eq("platform", "ig")
-            .like("content_type", "stock-performance-%")
-            .gte("created_at", since)
-            .order("created_at")
-            .execute()
-        )
+        posts = find_posts(content_type_prefix="stock-performance-", since=since)
     except Exception as error:
         typer.echo(f"Threads crosspost lookup failed for stock-performance: {error}")
         return
 
     image_urls = []
-    for row in result.data or []:
-        image_urls.extend(parse_image_urls(row.get("image_url")))
+    for post in posts:
+        image_urls.extend(parse_image_urls(post.get("image_url")))
 
     if not image_urls:
         return

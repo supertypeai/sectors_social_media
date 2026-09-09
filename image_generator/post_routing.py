@@ -1,12 +1,12 @@
-"""Single source of truth for which content types get queued to
-social_post_queue, and as which post_type ('feed' vs 'story'), plus when
-each one should actually go out (scheduled_at).
+"""Single source of truth for which content types get queued to Mailroom,
+and as which post_type ('feed' vs 'story'), plus when each one should
+actually go out (scheduled_at).
 
 Keyed by the command/mode name exactly as it's invoked (--mode X for
 cli.py, or the Typer command name for workflow_cli.py). A value of None
-means "don't queue this" - the generator command still runs and can still
-post to Slack as before, it just skips the upsert_post step entirely: no
-row, no image upload, no scheduled_at.
+means "don't queue this" - the generator command still runs and still
+renders its images, it just skips the upsert_post step entirely: no post,
+no image upload, no scheduled_at.
 
 This is the only place that decision lives - to turn queuing on/off for a
 content type, move it between feed and story, or change when it posts,

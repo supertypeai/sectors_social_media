@@ -1,17 +1,14 @@
-"""Cross-post an existing social_post_queue row's content to Threads.
+"""Cross-post an existing Mailroom post's content to Threads.
 
-Takes the image_url(s) + caption from an existing row (any platform/post_type)
-and queues a NEW row with platform='threads', post_type='feed' (Threads has
+Takes the image_url(s) + caption from an existing post (any platform/post_type)
+and queues a NEW one with platform='threads', post_type='feed' (Threads has
 no Stories concept, and 'story' post_type is IG-only by upsert_post's own
-validation). Supports both single-image and multi-image (carousel) source
-rows - publisher.py's Threads carousel support handles either.
+validation). Supports both single-image and multi-image (carousel) sources.
 
-This only inserts a queue row - it does not publish anything itself. Run
-`python -m image_generator.publisher` afterward (needs THREADS_ACCESS_TOKEN /
-THREADS_USER_ID in the environment) to actually post it.
+This only queues the post - Mailroom's own publisher sends it.
 
 Usage:
-    python scripts/queue_to_threads.py <row_id>
+    python scripts/queue_to_threads.py <post_id>
 """
 
 import sys
@@ -19,25 +16,21 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from image_generator.social_queue import _client, TABLE, upsert_post
+from image_generator import mailroom
+from image_generator.social_queue import upsert_post
 
 
-def queue_to_threads(row_id: int) -> dict:
-    client = _client()
-    result = client.table(TABLE).select("*").eq("id", row_id).execute()
-    if not result.data:
-        raise ValueError(f"No row with id={row_id}")
-
-    source = result.data[0]
-    image_url = source.get("image_url") or []
+def queue_to_threads(row_id: str) -> dict:
+    source = mailroom.get(f"/social/posts/{row_id}")
+    image_url = source.get("image_urls") or []
     caption = source.get("caption")
     if not image_url:
-        raise ValueError(f"Row {row_id} has no image_url(s) to cross-post")
+        raise ValueError(f"Post {row_id} has no image(s) to cross-post")
 
     return upsert_post(
         platform="threads",
         post_type="feed",
-        content_type=f"{source['content_type']}-threads",
+        content_type=f"{source.get('content_type') or row_id}-threads",
         image_url=image_url,
         caption=caption,
     )
@@ -45,11 +38,11 @@ def queue_to_threads(row_id: int) -> dict:
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        print("Usage: python scripts/queue_to_threads.py <row_id>")
+        print("Usage: python scripts/queue_to_threads.py <post_id>")
         sys.exit(1)
 
-    row = queue_to_threads(int(sys.argv[1]))
-    print(f"Queued row id={row['id']} platform={row['platform']} "
+    row = queue_to_threads(sys.argv[1])
+    print(f"Queued post id={row['id']} platform={row['platform']} "
           f"content_type={row['content_type']} images={len(row['image_url'])}")
     print("caption:")
     print(row["caption"])
