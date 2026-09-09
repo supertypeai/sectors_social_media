@@ -86,10 +86,19 @@ def _normalize(post: dict) -> dict:
     return post
 
 
-def upload_image_to_storage(local_path, bucket: str | None = None, dest_name: str | None = None) -> str:
+def upload_image_to_storage(
+    local_path,
+    bucket: str | None = None,
+    dest_name: str | None = None,
+    content_group: str | None = None,
+) -> str:
     """Convert a local image to JPEG (Instagram requires JPEG) and upload it
     to Mailroom, returning its permanent public URL. `bucket` is kept only so
     existing call sites keep working - Mailroom picks the storage location.
+
+    `content_group` becomes a folder in the stored object's key, so it has to
+    match the content_group the post is queued with - otherwise the image and
+    the row that references it disagree about which group they belong to.
 
     The Idempotency-Key is the JPEG's own content hash, so re-running a
     generator on the same input replays the first upload instead of storing
@@ -109,6 +118,7 @@ def upload_image_to_storage(local_path, bucket: str | None = None, dest_name: st
         "/social/uploads",
         idempotency_key=f"upload:{hashlib.sha256(payload).hexdigest()}",
         files={"file": (dest_name, payload, "image/jpeg")},
+        data={"content_group": content_group} if content_group else None,
     )
     return result["url"]
 
@@ -120,6 +130,7 @@ def upsert_post(
     image_url: str | list[str] | None,
     caption: str | None,
     scheduled_at: str | None = None,
+    content_group: str | None = None,
 ) -> dict:
     """Queue one platform-post for Mailroom's publisher to pick up.
 
@@ -183,6 +194,7 @@ def upsert_post(
             "content_type": content_type,
             "image_urls": image_urls,
             **({"caption": caption} if caption else {}),
+            **({"content_group": content_group} if content_group else {}),
             "scheduled_at": when.isoformat(),
         },
     ))
@@ -222,8 +234,12 @@ def queue_post(
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
     slug = content_type or base_content_type
+    # The group is the routing-table key, not `slug` - slug carries a per-item
+    # suffix (earnings-report-BBCA-up) that would make a group per symbol.
     image_urls = [
-        upload_image_to_storage(p, dest_name=f"{slug}_{stamp}_{i + 1}.jpg")
+        upload_image_to_storage(
+            p, dest_name=f"{slug}_{stamp}_{i + 1}.jpg", content_group=base_content_type
+        )
         for i, p in enumerate(image_paths)
     ]
 
@@ -234,6 +250,7 @@ def queue_post(
         image_url=image_urls,
         caption=caption,
         scheduled_at=scheduled_at,
+        content_group=base_content_type,
     )
 
 
@@ -281,6 +298,9 @@ def crosspost_to_threads(
         image_url=image_urls,
         caption=final_caption,
         scheduled_at=scheduled_at or threads_scheduled_at_for(base_content_type),
+        # Same group as the IG post it reuses the images from, so a content
+        # type reads as one group across both platforms.
+        content_group=base_content_type,
     )
 
 

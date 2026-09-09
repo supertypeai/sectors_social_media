@@ -33,6 +33,8 @@ def queue_to_threads(row_id: str) -> dict:
         content_type=f"{source.get('content_type') or row_id}-threads",
         image_url=image_url,
         caption=caption,
+        # Inherit the source post's group rather than starting a new one.
+        content_group=source.get("content_group"),
     )
 
 
