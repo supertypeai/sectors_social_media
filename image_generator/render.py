@@ -19,6 +19,9 @@ FONT_DIR = ROOT_DIR / "font"
 # Share of the disc diameter left as empty margin on each side when fitting a
 # company logo. See fit_logo_in_disc().
 LOGO_PAD_RATIO = 0.12
+# ImageDraw has no anti-aliasing, so the disc is drawn this many times larger
+# and scaled back down to get a smooth edge.
+LOGO_SUPERSAMPLE = 4
 
 COLORS = {
     "ink": "#2f3137",
@@ -359,12 +362,23 @@ def fit_logo_in_disc(logo_img, size, pad_ratio=LOGO_PAD_RATIO,
     fit inside the disc and leave `pad_ratio` of the diameter as margin.
 
     Pass plate=None to skip the white disc (logo alone, transparent behind).
+
+    The disc is drawn at LOGO_SUPERSAMPLE x and scaled down, because ImageDraw
+    renders shapes without anti-aliasing - drawing it at final size leaves a
+    visibly stair-stepped edge. Transparent pixels are white rather than black:
+    matplotlib's OffsetImage (volume-spike) resamples RGB and alpha separately,
+    so black-backed transparency would fringe the disc grey on dark cards.
     """
-    out = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     if plate:
-        ImageDraw.Draw(out).ellipse(
-            (0, 0, size - 1, size - 1), fill=plate, outline=outline, width=1
+        ss = LOGO_SUPERSAMPLE
+        big = Image.new("RGBA", (size * ss, size * ss), (255, 255, 255, 0))
+        ImageDraw.Draw(big).ellipse(
+            (0, 0, size * ss - 1, size * ss - 1),
+            fill=plate, outline=outline, width=ss,
         )
+        out = big.resize((size, size), Image.Resampling.LANCZOS)
+    else:
+        out = Image.new("RGBA", (size, size), (255, 255, 255, 0))
     inner = max(1, int(round(size * (1 - 2 * pad_ratio))))
     scale = inner / max(logo_img.width, logo_img.height)
     w = max(1, round(logo_img.width * scale))
