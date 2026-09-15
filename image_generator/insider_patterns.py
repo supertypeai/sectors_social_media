@@ -7,6 +7,7 @@ one-directionally on classification.py for a couple of shared tag helpers and
 constants; nothing in classification imports back from here.
 """
 import ast
+import calendar
 import json
 import re
 from datetime import datetime, timedelta
@@ -185,7 +186,7 @@ def _subtract_months(d, months):
     while month <= 0:
         month += 12
         year -= 1
-    last_day = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1]
+    last_day = calendar.monthrange(year, month)[1]
     return d.replace(year=year, month=month, day=min(d.day, last_day))
 
 
