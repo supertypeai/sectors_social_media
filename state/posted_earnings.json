@@ -210,6 +210,11 @@
       "latest_quarter": "Q1-2026",
       "posted_at": "2026-06-29"
     },
+    "earnings:INDF:Q2-2026:drop": {
+      "earnings_growth": -0.4329067757914145,
+      "latest_quarter": "Q2-2026",
+      "posted_at": "2026-09-24"
+    },
     "earnings:INDY:Q1-2026:spike": {
       "earnings_growth": 1.481432752803634,
       "latest_quarter": "Q1-2026",
