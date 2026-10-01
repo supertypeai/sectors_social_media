@@ -300,6 +300,12 @@
       "posted_at": "2026-08-12",
       "progress_count": 3
     },
+    "cluster:TRUK:buy": {
+      "completed_date": "2026-10-01",
+      "completing_filing_id": 4905,
+      "posted_at": "2026-10-01",
+      "progress_count": 5
+    },
     "cross:cgs international securities singapore": {
       "completed_date": "2026-07-29",
       "completing_filing_id": 4280,
