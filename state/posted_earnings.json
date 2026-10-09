@@ -165,6 +165,11 @@
       "latest_quarter": "Q2-2026",
       "posted_at": "2026-09-22"
     },
+    "earnings:DSSA:Q2-2026:spike": {
+      "earnings_growth": 5.124740919997077,
+      "latest_quarter": "Q2-2026",
+      "posted_at": "2026-10-09"
+    },
     "earnings:EMTK:Q2-2026:drop": {
       "earnings_growth": -0.9742201977573077,
       "latest_quarter": "Q2-2026",
