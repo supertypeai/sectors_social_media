@@ -245,6 +245,11 @@
       "latest_quarter": "Q1-2026",
       "posted_at": "2026-06-23"
     },
+    "earnings:MBMA:Q2-2026:spike": {
+      "earnings_growth": 1.9003701360414347,
+      "latest_quarter": "Q2-2026",
+      "posted_at": "2026-10-13"
+    },
     "earnings:MCOL:Q1-2026:spike": {
       "earnings_growth": 1.4246129305767583,
       "latest_quarter": "Q1-2026",
