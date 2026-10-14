@@ -276,6 +276,12 @@
       "posted_at": "2026-07-16",
       "progress_count": 3
     },
+    "cluster:MAPI:buy": {
+      "completed_date": "2026-10-14",
+      "completing_filing_id": 5036,
+      "posted_at": "2026-10-14",
+      "progress_count": 3
+    },
     "cluster:MGLV:sell": {
       "completed_date": "2026-08-26",
       "completing_filing_id": 4546,
