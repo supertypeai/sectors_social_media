@@ -320,6 +320,11 @@
       "latest_quarter": "Q1-2026",
       "posted_at": "2026-06-30"
     },
+    "earnings:SIDO:Q2-2026:drop": {
+      "earnings_growth": -0.4927189220957315,
+      "latest_quarter": "Q2-2026",
+      "posted_at": "2026-10-15"
+    },
     "earnings:SMAR:Q2-2026:spike": {
       "earnings_growth": 1.1914200348696729,
       "latest_quarter": "Q2-2026",
