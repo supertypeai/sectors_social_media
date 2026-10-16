@@ -194,7 +194,10 @@ def earnings_carousel(out: Path = typer.Option(Path("output/redesign/earnings"),
     from .data import fetch_company_report_earnings
     from .insider_patterns import select_earnings_spikes
     df = fetch_company_report_earnings(200)
+    from .triggers import select_earnings_fires
     events = select_earnings_spikes(df, direction="spike") + select_earnings_spikes(df, direction="drop")
+    # the live reporting season only (same recency gate as the old earnings feed); our own state does the dedup
+    events = select_earnings_fires(events, _today().isoformat(), {})
     events.sort(key=lambda e: abs(e.get("earnings_growth") or 0), reverse=True)
     for e in events:
         key = f"{e['base_symbol']}|{e.get('latest_quarter')}"
