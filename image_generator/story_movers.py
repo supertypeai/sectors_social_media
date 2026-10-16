@@ -137,7 +137,9 @@ def collect(monday, top_n=5, mcap_rank_max=100, end=None, min_days=3):
     return {"monday": monday, "friday": week_days[-1], "days": [d.isoformat() for d in week_days],
             "up": [row(r) for _, r in up.iterrows()], "down": [row(r) for _, r in dn.iterrows()],
             "ihsg": ihsg, "universe": int(len(perf)),
-            "breadth": {"up": int((perf["ret"] > 0).sum()), "down": int((perf["ret"] < 0).sum())}}
+            "breadth": {"up": int((perf["ret"] > 0).sum()), "down": int((perf["ret"] < 0).sum()),
+                        # closes at the exchange's daily limits (auto-reject, ±15% at most); a crash shows here
+                        "floor": int((perf["ret"] <= -0.145).sum()), "ceiling": int((perf["ret"] >= 0.145).sum())}}
 
 
 def _span(a, b):
