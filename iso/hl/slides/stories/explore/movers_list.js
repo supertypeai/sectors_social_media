@@ -13,8 +13,8 @@ type(svg, W - M, y0, D.company, "caps", { fill: TONE.muted, weight: 700, anchor:
 // the story, the list under it is the detail
 const B = C.breadth, n = C.universe || B.up + B.down || 1, red = B.down / n >= 0.85, green = B.up / n >= 0.85;
 if (red || green) {
-  type(svg, M, y0 + 44, red ? "A red day" : "A green day", "hero", { size: 34, weight: 500, fill: red ? TI : GI });
-  typeRun(svg, M, y0 + 80, [[`${red ? B.down : B.up} of ${C.universe}`, 34, 500, TONE.hi], [red ? " fell" : " rose", 34, 500, red ? TI : GI]]);
+  type(svg, M, y0 + 44, `${red ? B.down : B.up} of the top ${C.universe}`, "hero", { size: 34, weight: 500 });
+  type(svg, M, y0 + 80, red ? "fell today" : "rose today", "hero", { size: 34, weight: 500, fill: red ? TI : GI });
 } else {
   type(svg, M, y0 + 44, D.period === "day" ? "Today's" : "The week's", "hero", { size: 34, weight: 500 });
   typeRun(svg, M, y0 + 80, [["winners", 34, 500, GI], [" & ", 34, 500, TONE.hi], ["losers", 34, 500, TI]]);
@@ -36,10 +36,15 @@ function block(rows, top, ink, label) {
     if (i < rows.length - 1) mk("line", { x1: M + 34, y1: cy + RH / 2, x2: W - M, y2: cy + RH / 2, class: "lo thin" }, svg);
   });
 }
-block(C.up, t1, GI, "WINNERS");
-block(C.down, t1 + LAB + C.up.length * RH + GAP, TI, "LOSERS");
+// on a one-sided day "winners" for a +0.4% stock reads wrong: say what they did
+block(C.up, t1, GI, red ? (C.up.length === 1 ? "THE ONLY ONE UP" : `THE ONLY ${C.up.length} UP`) : "WINNERS");
+block(C.down, t1 + LAB + C.up.length * RH + GAP, TI, green ? (C.down.length === 1 ? "THE ONLY ONE DOWN" : `THE ONLY ${C.down.length} DOWN`) : "LOSERS");
 mk("line", { x1: M, y1: FOOT + 6, x2: W - M, y2: FOOT + 6, class: "lo thin" }, svg);
 
-type(svg, M, SAFE.bottom - 4, `${C.ihsg ? `IHSG ${pct(C.ihsg.ret)} · ` : ""}${C.breadth.up} rose, ${C.breadth.down} fell of the top 100`, "label", { fill: TONE.hi, size: 9, weight: 600 });
+// the footer adds what the headline doesn't: how many hit the daily limit on a one-sided day, else the breadth
+const limit = red ? B.floor : green ? B.ceiling : 0;
+const foot = limit >= 2 ? `${limit} closed at the ${red ? "−" : "+"}15% daily limit`
+  : red || green ? `${B.up} up, ${B.down} down` : `${B.up} up, ${B.down} down of the top ${C.universe}`;
+type(svg, M, SAFE.bottom - 4, `${C.ihsg ? `IHSG ${pct(C.ihsg.ret)} · ` : ""}${foot}`, "label", { fill: TONE.hi, size: 9, weight: 600 });
 type(svg, W - M, SAFE.bottom - 4, "sectors.app", "label", { fill: TONE.muted, size: 7.4, anchor: "end", weight: 650 });
 grain(0.09);
