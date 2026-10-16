@@ -28,6 +28,9 @@ ROOT = Path(__file__).resolve().parent.parent
 RENDER_JS = ROOT / "iso" / "hl" / "render.mjs"
 LOGO_URL = "https://storage.googleapis.com/sectorsapp-sea/logo/{}.webp"
 RATIO = 3.0
+# A spike only counts when real money changed hands: on a stock that barely trades, one order of a few hundred
+# million rupiah makes a 20x "spike" that is noise (SRAJ on 16 Oct 2026: Rp 160 M, 13.9K shares vs 600 normal).
+MIN_VALUE = 5e9  # Rp traded that day
 HISTORY_DAYS = 420  # a year+ of trading for "highest since", plus the 30-day baseline
 
 
@@ -96,7 +99,10 @@ def spikes_on(df, day):
     t = t.assign(med30=m30, med14=m14).dropna(subset=["med30", "med14"])
     t = t[(t["med30"] > 0) & (t["med14"] > 0)]
     t = t.assign(ratio=t["volume"] / t["med30"], ratio14=t["volume"] / t["med14"])
-    return t[(t["ratio"] > RATIO) & (t["ratio14"] > RATIO)].sort_values("ratio", ascending=False)
+    t = t[(t["ratio"] > RATIO) & (t["ratio14"] > RATIO)]
+    # value traded that day: the table's own column, else close x volume
+    value = t["value"].where(t["value"] > 0, t["close"] * t["volume"])
+    return t[value >= MIN_VALUE].sort_values("ratio", ascending=False)
 
 
 def _facts(df, sym, day, row):

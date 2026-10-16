@@ -178,7 +178,7 @@ POST_SCHEDULE_BY_CONTENT_TYPE: dict[str, dict] = {
     "story-crossing": {"target": "same_day", "hour": 10, "minute": 0},
     "story-news": {"target": "same_day", "hour": 13, "minute": 0},
     "story-volume": {"target": "same_day", "hour": 20, "minute": 0},
-    "story-broker": {"target": "same_day", "hour": 20, "minute": 30},
+    "story-broker": {"target": "same_day", "hour": 9, "minute": 30},     # the previous trading day's brokers
     "story-movers": {"target": "same_day", "hour": 21, "minute": 0},
 }
 

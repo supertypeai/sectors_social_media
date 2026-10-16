@@ -9,7 +9,8 @@ Feed carousels (one weekly slot each; times are the go-live times in post_routin
   earnings-carousel  Thu 13:00  the biggest unposted earnings spike/drop, blue        (earnings_v_data)
 
 Daily stories (one image each, light theme; breaking news is posted by hand, not here):
-  story-crossing  10:00   story-news  13:00   story-volume  20:00   story-broker  20:30   story-movers  21:00
+  story-broker  09:30 (previous trading day)   story-crossing  10:00   story-news  13:00   story-volume  20:00
+  story-movers  21:00
 
 Every command exits 0 without queuing when there is nothing new (no trading day, no spike, nothing unposted).
 --dry-run renders the images and prints the caption but never touches Mailroom or the state file.
@@ -256,14 +257,22 @@ def earnings_carousel(out: Path = typer.Option(Path("output/redesign/earnings"),
 @app.command("story-broker")
 def story_broker(out: Path = typer.Option(Path("output/redesign/stories"), "--out"),
                  dry_run: bool = typer.Option(False, "--dry-run"), day: str = typer.Option(None, "--date")):
-    """The day's top 5 brokers on the podium. Skips when today has no broker data (market shut)."""
+    """The latest trading day's top 5 brokers on the podium, posted the next MORNING (09:30): the evening broksum
+    scrape is unreliable, the 08:00 backfill is not. Each day posts once (state), so Friday's board goes out on
+    Saturday and the Sunday/Monday runs skip."""
     from . import story_broker as sb
-    d = date.fromisoformat(day) if day else sb.latest_trading_day()
-    paths = sb.render_day(d, out) if d else []
-    if not paths:
-        typer.echo("skip: no broker data for today")
+    from .data import fetch_latest_broker_date
+    d = date.fromisoformat(day) if day else date.fromisoformat(str(fetch_latest_broker_date())[:10])
+    if not day and _posted("broker", d.isoformat()):
+        typer.echo(f"skip: broker board for {d} already posted")
         raise typer.Exit(0)
-    _queue("story-broker", [Path(p) for p in paths], None, dry_run)
+    title = "Brokers yesterday" if d == _today() - timedelta(days=1) else f"Brokers on {d:%a} {d.day} {d:%b}"
+    paths = sb.render_day(d, out, title=title)
+    if not paths:
+        typer.echo(f"skip: no broker data for {d}")
+        raise typer.Exit(0)
+    if _queue("story-broker", [Path(p) for p in paths], None, dry_run, item=f"{d:%Y%m%d}") and not dry_run and not day:
+        _remember("broker", d.isoformat())
 
 
 @app.command("story-movers")

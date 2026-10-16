@@ -37,7 +37,8 @@ NEW_JOBS = [
     dict(post="story-crossing", hour=9, minute=30, wdays=DAILY),    # daily 10:00
     dict(post="story-news", hour=12, minute=30, wdays=DAILY),       # daily 13:00
     dict(post="story-volume", hour=19, minute=30, wdays=DAILY),     # daily 20:00 (skips non-trading days)
-    dict(post="story-broker", hour=20, minute=0, wdays=DAILY),      # daily 20:30 (skips non-trading days)
+    dict(post="story-broker", hour=9, minute=0, wdays=DAILY),       # daily 09:30, the previous trading day
+                                                                    # (after broksum's 08:00 backfill)
     dict(post="story-movers", hour=20, minute=30, wdays=DAILY),     # daily 21:00 (skips non-trading days)
 ]
 
