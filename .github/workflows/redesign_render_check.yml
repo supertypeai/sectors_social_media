@@ -1,0 +1,70 @@
+name: Redesign render check (no posting)
+
+# Proves the redesigned posts (iso/hl renderer: Node + headless Chrome) can be generated on a GitHub runner.
+# It ONLY renders and uploads the PNGs as an artifact: no Mailroom secrets are passed, nothing is queued or
+# posted, and no state file is written back. Runs on pushes to the redesign branch (a new workflow can only be
+# dispatched by hand once it exists on main).
+
+on:
+  push:
+    branches: [feat/redesigned-posts]
+  workflow_dispatch:
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libharfbuzz-dev libfribidi-dev ffmpeg
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Render every redesigned post (read-only data, no queue)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          set -x
+          # the last weekday before today, so the daily stories have a finished trading day to show
+          DAY=$(python -c "from datetime import date,timedelta as t;d=date.today()-t(days=1)
+          while d.weekday()>4: d-=t(days=1)
+          print(d)")
+          mkdir -p check
+          # the same commands the scheduled jobs run, all with --dry-run (no Mailroom keys here either)
+          for cmd in "story-broker --date $DAY" "story-movers --date $DAY" "story-volume --date $DAY" "story-news" \
+                     "story-crossing --days 14" "news-flash" "weekly-calendar" "insider-carousel --video" "earnings-carousel --video"; do
+            python -m image_generator.redesign_cli $cmd --dry-run --out check || echo "::warning::$cmd failed"
+          done
+          find check -name '*.png' | sort
+          test -n "$(find check -name '*.png' | head -1)"
+
+      - name: Upload renders
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: redesign-render-check
+          path: |
+            check/**/*.png
+            check/**/*.mp4
+          if-no-files-found: warn
+          retention-days: 7

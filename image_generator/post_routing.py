@@ -18,34 +18,46 @@ from datetime import datetime, time, timedelta, timezone
 WIB = timezone(timedelta(hours=7))
 
 POST_TYPE_BY_CONTENT_TYPE: dict[str, str | None] = {
-    # ── feed: LLM-grounded captions ──────────────────────────────────────
-    "filings-becoming": "feed",    # insider crossing 5% ownership
-    "filings-signal": "feed",      # insider cluster / cross / chain (signal feed)
-    "filings-story": "feed",       # insider cluster / chain (story feed)
-    "volume-spike": "feed",
-    "earnings-report": "feed",     # profit/earnings spike
-    "stock-performance": "feed",   # index drivers
-    "companies-mover": "feed",     # top movers (1-month leaders/laggards)
+    # ── redesigned posts (Sectors Hairline, image_generator/redesign_cli.py) ──
+    # feed carousels, one weekly slot each
+    "news-flash": "feed",          # Wed - the week's top stories (maroon)
+    "weekly-calendar": "feed",     # Mon - the week's corporate actions (maroon)
+    "insider-carousel": "feed",    # Tue - one insider move, 5 slides (blue)
+    "earnings-carousel": "feed",   # Thu - one earnings report, 4-5 slides (blue)
+    # daily stories, one image each (light); breaking news is posted by hand
+    "story-news": "story",         # news compilation
+    "story-volume": "story",       # volume spike
+    "story-broker": "story",       # top 5 brokers (podium)
+    "story-movers": "story",       # top movers (list)
+    "story-crossing": "story",     # new 5% holder
 
-    # ── story: static/rule-based captions ────────────────────────────────
-    "broker-bandar": "story",      # daily top broker (Bandar Scorecard)
-    "broker-trending": "story",    # daily top broker (Trending Movers)
-    "filings-daily": "story",      # insider filings (raw digest)
-    "filings-plain": "story",      # insider filings (raw digest)
-    "filings-context": "story",    # insider filings (raw digest)
-    "filings-tags": "story",       # insider filings (raw digest)
-    "news-tier1": "story",         # idx_news (tags)
-    "news-tier2": "story",         # idx_news (tags)
-    "macro-news": "story",         # idx_news (macro news)
-    "upcoming-dividend": "story",
-    "agm": "story",
-    "foreign-flow": "story",
-    "weekly-accumulation": "story",  # weekly top-net-buy stocks (Most Accumulated)
-    "weekly-distribution": "story",  # weekly top-net-sell stocks (Most Distributed)
-    "weekly-bandar": "story",        # weekly top broker-stock pairs (Bandar of the Week)
-    "broker-weekly": "story",        # weekly top broker recap
-    "dividend": "story",             # recurring dividend post, distinct from upcoming-dividend
-    "insider-roundup": "story",
+    # ── retired 2026-10 (replaced by the redesigned posts above) ────────
+    # Kept as None so a stray cron-job.org / manual run can't post them.
+    "filings-becoming": None,
+    "filings-signal": None,
+    "filings-story": None,
+    "volume-spike": None,
+    "earnings-report": None,
+    "stock-performance": None,
+    "companies-mover": None,
+    "broker-bandar": None,
+    "broker-trending": None,
+    "filings-daily": None,
+    "filings-plain": None,
+    "filings-context": None,
+    "filings-tags": None,
+    "news-tier1": None,
+    "news-tier2": None,
+    "macro-news": None,
+    "upcoming-dividend": None,
+    "agm": None,
+    "foreign-flow": None,
+    "weekly-accumulation": None,
+    "weekly-distribution": None,
+    "weekly-bandar": None,
+    "broker-weekly": None,
+    "dividend": None,
+    "insider-roundup": None,
 
     # ── not yet decided - left null on purpose, don't queue ──────────────
     "quarterly": None,           # workflow_cli.py
@@ -108,6 +120,16 @@ CONTENT_GROUP_BY_CONTENT_TYPE: dict[str, str] = {
     "macro-news": "news",
 
     "agm": "news",
+    # Redesigned posts.
+    "news-flash": "news",
+    "story-news": "news",
+    "weekly-calendar": "calendar",
+    "insider-carousel": "filings",
+    "story-crossing": "filings",
+    "earnings-carousel": "financial",
+    "story-volume": "volume",
+    "story-movers": "volume",
+    "story-broker": "broker",
 }
 
 
@@ -148,6 +170,16 @@ POST_SCHEDULE_BY_CONTENT_TYPE: dict[str, dict] = {
     "filings-plain": {"target": "same_day", "hour": 8, "minute": 0},
     # Generated Saturday - posts the following Monday, same time-of-day.
     "foreign-flow": {"target": "next_weekday", "weekday": 0, "hour": 9, "minute": 0},
+    # Redesigned posts: generated ~30 min before these go-live times (WIB), on the day itself.
+    "news-flash": {"target": "same_day", "hour": 16, "minute": 30},       # Wed
+    "weekly-calendar": {"target": "same_day", "hour": 13, "minute": 0},   # Mon
+    "insider-carousel": {"target": "same_day", "hour": 13, "minute": 0},  # Tue
+    "earnings-carousel": {"target": "same_day", "hour": 13, "minute": 0}, # Thu
+    "story-crossing": {"target": "same_day", "hour": 10, "minute": 0},
+    "story-news": {"target": "same_day", "hour": 13, "minute": 0},
+    "story-volume": {"target": "same_day", "hour": 20, "minute": 0},
+    "story-broker": {"target": "same_day", "hour": 20, "minute": 30},
+    "story-movers": {"target": "same_day", "hour": 21, "minute": 0},
 }
 
 
