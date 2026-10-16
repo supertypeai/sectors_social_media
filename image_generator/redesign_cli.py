@@ -86,6 +86,39 @@ def _summarizer():
         return None
 
 
+DRAFT = False  # set by --draft (the callback below): create Mailroom drafts instead of scheduled posts
+
+
+@app.callback()
+def _options(draft: bool = typer.Option(False, "--draft",
+                                        help="queue to Mailroom as a DRAFT (no scheduled_at): never published until "
+                                             "someone schedules it in Mailroom. No state is recorded.")):
+    global DRAFT
+    DRAFT = draft
+
+
+def _queue_draft(content_type, paths, caption, item=None):
+    """Upload the images and create the post with no scheduled_at, so Mailroom keeps it as a draft."""
+    from . import mailroom
+    from .post_routing import content_group_for, post_type_for
+    from .social_queue import upload_image_to_storage
+    post_type = post_type_for(content_type)
+    if post_type is None:
+        typer.echo(f"not queued: {content_type} is not routed")
+        return False
+    slug = f"{content_type}-{item}" if item else content_type
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M")
+    group = content_group_for(content_type)
+    urls = [upload_image_to_storage(str(p), dest_name=f"{slug}_draft_{stamp}_{i + 1}.jpg", content_group=group)
+            for i, p in enumerate(paths)]
+    row = mailroom.post("/social/posts", idempotency_key=f"ig:{post_type}:{slug}:draft:{stamp}", json={
+        "platform": "ig", "post_type": post_type, "content_type": slug, "image_urls": urls,
+        **({"caption": caption} if caption else {}), "content_group": group,
+    })
+    typer.echo(f"DRAFT created in Mailroom: id={row.get('id')} status={row.get('status')} (not scheduled)")
+    return False  # a draft is not a post: don't record it as posted
+
+
 def _queue(content_type, paths, caption, dry_run, item=None, threads=False):
     """Queue one post (feed carousel or one-image story) with its go-live time; crosspost feed posts to Threads.
     Returns True when it was queued (or would have been, on a dry run)."""
@@ -97,6 +130,8 @@ def _queue(content_type, paths, caption, dry_run, item=None, threads=False):
     if dry_run:
         typer.echo("dry run: not queued")
         return True
+    if DRAFT:
+        return _queue_draft(content_type, paths, caption, item)
     from .post_routing import scheduled_at_for
     from .social_queue import crosspost_to_threads, queue_post
     row = queue_post(content_type, [str(p) for p in paths], caption,
