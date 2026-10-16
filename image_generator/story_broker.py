@@ -1,12 +1,16 @@
-"""Top broker story: who moved the most money last week, and the one broker whose flow stood out. Two IG story frames.
+"""Top broker story: the day's five busiest brokers on a 3D podium. One IG story frame (light theme).
 
-    python -m image_generator.story_broker [--out output_stories/broker] [--week-start 2026-10-05]
+    python -m image_generator.story_broker [--out output_stories/broker] [--date 2026-10-16] [--theme light]
 
-Frames, drawn by iso/hl/render.mjs in the Sectors Hairline style (9:16, DATA.format = "story"):
-  1. story_broker_rank    the eight busiest brokers of the week, bars true to scale (buy + sell value),
-                          share of all broker trades, change vs the week before
-  2. story_broker_spot    the broker with the largest net position (bought or sold): the week's net, its
-                          net day by day (diverging bars), and the three stocks behind it
+Daily: the latest trading day in idx_broker_summary_daily. When that day isn't today (WIB) the market was shut
+(weekend, holiday), so nothing is rendered and the run exits cleanly - same guard as broker-bandar. --date
+renders a past day on purpose.
+
+Frame (iso/hl/slides/stories/explore/broker_podium3d.js, 9:16): the top 5 by value traded (buy + sell) as iso
+columns, #1 in the centre, each with its share of all broker value and a bought/sold split.
+
+The older weekly frames (story_broker_rank / story_broker_spot, via build(week_start)) are kept for a possible
+weekly recap; they are not what the daily run posts.
 
 Source: idx_broker_summary_daily (+ idx_broker_registry for names). The table answers at most 8,000 rows per
 request and a trading day has ~20,000 rows, so it is read one day at a time, ordered, in pages of 5,000.
@@ -18,7 +22,8 @@ import re
 import subprocess
 import tempfile
 import time
-from datetime import date, timedelta
+import urllib.request
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -137,6 +142,72 @@ def build(start):
     return [("story_broker_rank", f1), ("story_broker_spot", f2)]
 
 
+def broker_logo(code):
+    """logos/brokers/<CODE>.webp, fetched once from the Sectors bucket (the folder the web app uses); None if none."""
+    p = ROOT / "logos" / "brokers" / f"{code}.webp"
+    if not p.exists():
+        p.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with urllib.request.urlopen(f"https://storage.googleapis.com/sectorsapp-sea/broker_logo/{code}.webp", timeout=8) as r:
+                p.write_bytes(r.read())
+        except Exception:
+            return None
+    return p.resolve().as_uri()
+
+
+def _clean(df):
+    df = df[df["broker_code"] != "--"].copy()
+    df["symbol"] = df["symbol"].str.split(".").str[0]
+    df["gross"] = df["bval"] + df["sval"]
+    return df
+
+
+def build_day(day, theme="light"):
+    """The podium frame for one trading day: [("broker_podium3d", DATA)], or [] when the day has no data."""
+    df = _clean(_day_rows(day.isoformat()))
+    if df.empty:
+        return []
+    reg = fetch_supabase_table("idx_broker_registry", columns="broker_code, broker_name, is_foreign").set_index("broker_code")
+    tot = df.groupby("broker_code").agg(gross=("gross", "sum"), net=("nval", "sum")).sort_values("gross", ascending=False)
+    all_gross = float(tot["gross"].sum())
+    rows = []
+    for code, r in tot.head(8).iterrows():
+        g, n, info = float(r["gross"]), float(r["net"]), reg.loc[code] if code in reg.index else None
+        rows.append({"code": code, "logo": broker_logo(code),
+                     "name": short_name(info["broker_name"] if info is not None else None, code),
+                     "foreign": bool(info["is_foreign"]) if info is not None and pd.notna(info["is_foreign"]) else False,
+                     "buy": (g + n) / 2, "sell": (g - n) / 2, "gross": g, "gross_s": fmt_rp(g),
+                     "net": n, "net_s": fmt_rp(n, sign=True), "share": g / all_gross * 100})
+    return [("broker_podium3d", {"format": "story", "theme": theme, "period": "day", "company": f"{day.day} {day:%b %Y}",
+                                 "kicker": "Top brokers", "market": fmt_rp(df["bval"].sum()),
+                                 "rows": rows, "nbrokers": int(len(tot)), "source": "IDX broker summary · Sectors"})]
+
+
+def latest_trading_day():
+    """The latest day in idx_broker_summary_daily, or None if it isn't today in WIB (market shut)."""
+    from .data import fetch_latest_broker_date
+    d = fetch_latest_broker_date()
+    today = (datetime.now(timezone.utc) + timedelta(hours=7)).date()
+    return today if d and date.fromisoformat(str(d)[:10]) == today else None
+
+
+def render_day(day, out_dir, theme="light"):
+    """Render the daily podium; returns [path] (one story image) or [] when there is nothing to post."""
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    paths = []
+    for kind, data in build_day(day, theme):
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, default=str)
+        out = out_dir / f"story_broker_{day:%Y%m%d}.png"
+        run = subprocess.run(["node", str(RENDER_JS), kind, f.name, "--out", str(out)], capture_output=True, text=True, encoding="utf-8")
+        Path(f.name).unlink(missing_ok=True)
+        if run.returncode != 0:
+            raise RuntimeError(f"render failed for {kind}:\n{run.stderr.strip() or run.stdout.strip()}")
+        paths.append(str(out))
+    return paths
+
+
 def render(start, out_dir):
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -157,11 +228,20 @@ def main():
     load_dotenv()
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--out", default="output_stories/broker")
-    p.add_argument("--week-start", default=None, help="Monday of the week (default: last full week)")
+    p.add_argument("--date", default=None, help="trading day to render (default: today, skipped if the market was shut)")
+    p.add_argument("--theme", default="light", choices=["light", "dark", "blue"])
+    p.add_argument("--week-start", default=None, help="render the old two-frame WEEKLY story for this Monday instead")
     a = p.parse_args()
-    start = date.fromisoformat(a.week_start) if a.week_start else last_full_week(date.today())
-    for path in render(start, a.out):
-        print(path)
+    if a.week_start:
+        for path in render(date.fromisoformat(a.week_start), a.out):
+            print(path)
+        return
+    day = date.fromisoformat(a.date) if a.date else latest_trading_day()
+    if not day:
+        print("skip: no broker data for today (market closed)")
+        return
+    paths = render_day(day, a.out, None if a.theme == "dark" else a.theme)
+    print(*(paths or [f"skip: no broker data for {day}"]), sep="\n")
 
 
 if __name__ == "__main__":

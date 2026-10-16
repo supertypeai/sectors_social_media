@@ -9,7 +9,7 @@ const y0 = SAFE.top + 8;
 mk("circle", { cx: M + 2.5, cy: y0 - 2.6, r: 2.5, class: "accf" }, svg);
 type(svg, M + 10, y0, "TOP MOVERS", "caps", { fill: TONE.hi, weight: 750 });
 type(svg, W - M, y0, D.company, "caps", { fill: TONE.muted, weight: 700, anchor: "end" });
-type(svg, M, y0 + 44, "The week's", "hero", { size: 34, weight: 500 });
+type(svg, M, y0 + 44, D.period === "day" ? "Today's" : "The week's", "hero", { size: 34, weight: 500 });
 typeRun(svg, M, y0 + 80, [["winners", 34, 500, GI], [" & ", 34, 500, TONE.hi], ["losers", 34, 500, TI]]);
 
 // both blocks share the room between the title and the footer line, so the last row never reaches it
