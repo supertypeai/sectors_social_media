@@ -120,7 +120,8 @@ def _facts(df, sym, day, row):
     return {
         "price": row["close"], "chg": chg, "value": row.get("value"),
         "rare": rare, "foreign": {"share": fshare, "net": net},
-        "bars": [{"d": f"{d:%Y-%m-%d}", "v": float(x)} for d, x in bars["volume"].items()],
+        # each day's volume and close: the story draws the price line over the volume bars
+        "bars": [{"d": f"{d:%Y-%m-%d}", "v": float(v), "c": float(c)} for d, v, c in zip(bars.index, bars["volume"], bars["close"])],
     }
 
 

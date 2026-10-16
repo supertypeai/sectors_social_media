@@ -9,9 +9,8 @@ name: Generate and Post Foreign Flow Leaderboard
 # captured before the post goes out.
 
 on:
-  schedule:
-    - cron: '0 1 * * 6'   # Saturday 08:00 WIB (01:00 UTC)
-
+  # Retired 2026-10 with the redesign: the Saturday schedule is removed (and foreign-flow routes to None in
+  # post_routing.py). Manual dispatch still works for a one-off render.
   workflow_dispatch:
     inputs:
       dry_run:

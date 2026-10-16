@@ -50,12 +50,11 @@ jobs:
           while d.weekday()>4: d-=t(days=1)
           print(d)")
           mkdir -p check
-          python -m image_generator.story_broker --date "$DAY" --out check/stories || echo "::warning::story_broker failed"
-          python -m image_generator.story_movers --date "$DAY" --out check/stories || echo "::warning::story_movers failed"
-          python -m image_generator.news_flash --out check/news_flash || echo "::warning::news_flash failed"
-          python -m image_generator.weekly_calendar --out check/weekly_calendar || echo "::warning::weekly_calendar failed"
-          python -m image_generator.combo_posts insider --symbols BYAN,KETR,PPGL --theme blue --out check || echo "::warning::insider carousel failed"
-          python -m image_generator.combo_posts earnings --symbols PTBA,UNTR --theme blue --out check || echo "::warning::earnings carousel failed"
+          # the same commands the scheduled jobs run, all with --dry-run (no Mailroom keys here either)
+          for cmd in "story-broker --date $DAY" "story-movers --date $DAY" "story-volume --date $DAY" "story-news" \
+                     "story-crossing --days 14" "news-flash" "weekly-calendar" "insider-carousel --video" "earnings-carousel --video"; do
+            python -m image_generator.redesign_cli $cmd --dry-run --out check || echo "::warning::$cmd failed"
+          done
           find check -name '*.png' | sort
           test -n "$(find check -name '*.png' | head -1)"
 
@@ -64,6 +63,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: redesign-render-check
-          path: check/**/*.png
+          path: |
+            check/**/*.png
+            check/**/*.mp4
           if-no-files-found: warn
           retention-days: 7

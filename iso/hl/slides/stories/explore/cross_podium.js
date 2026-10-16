@@ -14,7 +14,9 @@ type(svg, M, y0 + 44, "Who owns", "hero", { size: 34, weight: 500 });
 logoChip(svg, M + 18, y0 + 70, 16, S.logo, S.sym);
 type(svg, M + 42, y0 + 82, `${S.sym} now`, "hero", { size: 34, weight: 500, fill: GI });
 
-const rows = O.slice(0, 4), n = rows.length, fw = 58, gap = 30, dx = 16, dy = 9;
+// columns narrow (and their gaps tighten) so four holders still fit inside the margins
+const rows = O.slice(0, 4), n = rows.length, dx = 16, dy = 9, gap = n >= 4 ? 22 : 30;
+const fw = Math.min(58, (W - 2 * M - dx - (n - 1) * gap) / n);
 const totalW = n * fw + (n - 1) * gap + dx, x0 = (W - totalW) / 2, base = SAFE.bottom - 66;
 // heights: square-root scale so a 5% holder is still visible next to a 51% one; labels carry the exact %
 const vmax = Math.max(...rows.map((r) => r.pct)), Hmax = base - (y0 + 168), hv = (v) => Hmax * Math.sqrt(v / vmax);

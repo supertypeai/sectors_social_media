@@ -149,6 +149,28 @@ def render_story(ev, df, out_dir):
     return paths
 
 
+def usable(ev, df):
+    """False for a crossing whose story would mislead: sold back under 5% since, or filings that already start
+    above 5% (they contradict each other)."""
+    steps = _steps(df, ev, _clean_name(ev["holder_name"]), ev["cross_date"])
+    return steps[-1]["pct"] >= 5 and steps[0]["pct"] < 5
+
+
+def build_podium(ev, df, theme="light"):
+    """The posted story: ("cross_podium", DATA) - the company's major holders as iso columns, the newcomer's
+    column split into what it had and what it added, a 5% line across. None when there is no usable roster."""
+    frames = build_story(ev, df)
+    s = {k: v for k, v in frames[0][1]["slide"].items() if k not in ("page", "pages")}
+    owners = next((d["slide"]["rows"] for k, d in frames if k == "story_crossing_owners"), None)
+    if not owners:
+        return None
+    day = _crossing_day(df, ev)
+    return ("cross_podium", {"format": "story", "theme": theme, "company": ev["base_symbol"], "s": s, "owners": owners,
+                             "prices": _prices(ev["symbol"], day), "cross": str(day)[:10],
+                             "avg": float(ev.get("avg_price") or 0), "spent": float(ev.get("total_value") or 0),
+                             "source": frames[0][1]["source"]})
+
+
 def main():
     load_dotenv()
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
