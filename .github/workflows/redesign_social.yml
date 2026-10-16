@@ -30,6 +30,12 @@ on:
         default: 'true'
         type: choice
         options: ['true', 'false']
+      draft:
+        description: 'Create a Mailroom DRAFT (never published until scheduled by hand in Mailroom). Overrides dry_run.'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
 
 concurrency:
   group: redesign-${{ github.event.inputs.post }}
@@ -75,11 +81,12 @@ jobs:
           GEMINI_API_KEY3: ${{ secrets.GEMINI_API_KEY3 }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
-          FLAGS=""
-          if [ "${{ github.event.inputs.dry_run }}" != "false" ]; then FLAGS="--dry-run"; echo "DRY RUN: nothing will be queued"; fi
+          FLAGS=""; PRE=""
+          if [ "${{ github.event.inputs.draft }}" = "true" ]; then PRE="--draft"; echo "DRAFT: queued to Mailroom without a schedule"
+          elif [ "${{ github.event.inputs.dry_run }}" != "false" ]; then FLAGS="--dry-run"; echo "DRY RUN: nothing will be queued"; fi
           # the carousels also render the motion cover as an MP4 (artifact only; the queue takes images)
           case "${{ github.event.inputs.post }}" in insider-carousel|earnings-carousel) FLAGS="$FLAGS --video";; esac
-          python -m image_generator.redesign_cli "${{ github.event.inputs.post }}" $FLAGS --out output/redesign
+          python -m image_generator.redesign_cli $PRE "${{ github.event.inputs.post }}" $FLAGS --out output/redesign
 
       - name: Upload renders
         if: always()
@@ -93,7 +100,7 @@ jobs:
           retention-days: 7
 
       - name: Persist post state
-        if: github.event.inputs.dry_run == 'false'
+        if: github.event.inputs.dry_run == 'false' && github.event.inputs.draft != 'true'
         run: |
           [ -f state/posted_redesign.json ] || { echo "no state file"; exit 0; }
           git config user.name  "github-actions[bot]"
