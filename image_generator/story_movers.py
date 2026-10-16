@@ -76,8 +76,10 @@ def collect(monday, top_n=5, mcap_rank_max=100, end=None, min_days=3):
     since = (monday - timedelta(days=40)).isoformat()  # room for the base close and a 20-session normal
     syms = comp["symbol"].tolist()
     parts = []
-    for i in range(0, len(syms), 50):  # keep the IN list and the row count per request modest
-        chunk = syms[i:i + 50]
+    # the server answers at most 1,000 rows per request and drops the rest silently: 15 symbols x ~30 trading
+    # days stays well under it (50 symbols cut off the latest days, so the newest day went missing at random)
+    for i in range(0, len(syms), 15):
+        chunk = syms[i:i + 15]
         parts.append(fetch_supabase_table("idx_daily_data", columns="symbol,date,close,value",
                                           query_modifier=lambda q, c=chunk: q.in_("symbol", c).gte("date", since).lte("date", friday.isoformat())))
     daily = pd.concat(parts, ignore_index=True)
@@ -106,7 +108,9 @@ def collect(monday, top_n=5, mcap_rank_max=100, end=None, min_days=3):
     perf = pd.DataFrame(rows).merge(comp, on="symbol", how="left")
     up = perf[perf["ret"] > 0].sort_values("ret", ascending=False).head(top_n)
     dn = perf[perf["ret"] < 0].sort_values("ret").head(top_n)
-    if len(up) < 3 or len(dn) < 3:
+    # one-sided days still post (a crash day can have only 2 risers in the top 100 - the day the story matters
+    # most); the list just shows fewer winners. Skip only when one side is empty or there is too little to show.
+    if up.empty or dn.empty or len(up) + len(dn) < 6:
         return None
 
     ix = fetch_supabase_table("index_daily_data", columns="date,price",
@@ -156,18 +160,22 @@ def build(monday, top_n=5):
 def build_day(day, top_n=5, theme="light"):
     """The daily list frame: [("movers_list", DATA)] for one trading day, or [] when it is too thin to post."""
     c = collect(day, top_n, end=day, min_days=1)
-    if not c or not c["ihsg"]:
+    if not c:
         return []
+    # the index table can load later than stock prices; the story then just leaves IHSG out of its footer
+    if c["ihsg"] and c["ihsg"]["path"] and c["ihsg"]["path"][-1]["date"] != day.isoformat():
+        c["ihsg"] = None
     return [("movers_list", {"format": "story", "theme": theme, "period": "day", "company": f"{day.day} {day:%b %Y}".upper(),
                              "c": c, "source": "IDX daily closes · top 100 by market cap · Sectors"})]
 
 
 def latest_trading_day():
-    """Today (WIB) if IHSG has a close for it, else None (weekend / holiday: nothing new to post)."""
+    """Today (WIB) if stock prices are loaded for it (BBCA as the probe), else None (weekend / holiday). Stock
+    prices, not IHSG: the index table loads later in the evening."""
     from datetime import datetime, timezone
     today = (datetime.now(timezone.utc) + timedelta(hours=7)).date()
-    ix = fetch_supabase_table("index_daily_data", columns="date", query_modifier=lambda q: q.eq("index_code", "IHSG").eq("date", today.isoformat()))
-    return today if not ix.empty else None
+    px = fetch_supabase_table("idx_daily_data", columns="date", query_modifier=lambda q: q.eq("symbol", "BBCA.JK").eq("date", today.isoformat()))
+    return today if not px.empty else None
 
 
 def render_day(day, out_dir, top_n=5, theme="light"):

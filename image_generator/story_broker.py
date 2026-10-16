@@ -162,7 +162,7 @@ def _clean(df):
     return df
 
 
-def build_day(day, theme="light"):
+def build_day(day, theme="light", title=None):
     """The podium frame for one trading day: [("broker_podium3d", DATA)], or [] when the day has no data."""
     df = _clean(_day_rows(day.isoformat()))
     if df.empty:
@@ -178,7 +178,7 @@ def build_day(day, theme="light"):
                      "foreign": bool(info["is_foreign"]) if info is not None and pd.notna(info["is_foreign"]) else False,
                      "buy": (g + n) / 2, "sell": (g - n) / 2, "gross": g, "gross_s": fmt_rp(g),
                      "net": n, "net_s": fmt_rp(n, sign=True), "share": g / all_gross * 100})
-    return [("broker_podium3d", {"format": "story", "theme": theme, "period": "day", "company": f"{day.day} {day:%b %Y}",
+    return [("broker_podium3d", {"format": "story", "theme": theme, "period": "day", "title": title, "company": f"{day.day} {day:%b %Y}",
                                  "kicker": "Top brokers", "market": fmt_rp(df["bval"].sum()),
                                  "rows": rows, "nbrokers": int(len(tot)), "source": "IDX broker summary · Sectors"})]
 
@@ -191,12 +191,12 @@ def latest_trading_day():
     return today if d and date.fromisoformat(str(d)[:10]) == today else None
 
 
-def render_day(day, out_dir, theme="light"):
+def render_day(day, out_dir, theme="light", title=None):
     """Render the daily podium; returns [path] (one story image) or [] when there is nothing to post."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     paths = []
-    for kind, data in build_day(day, theme):
+    for kind, data in build_day(day, theme, title):
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, default=str)
         out = out_dir / f"story_broker_{day:%Y%m%d}.png"

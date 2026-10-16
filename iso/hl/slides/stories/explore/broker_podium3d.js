@@ -12,7 +12,7 @@ mk("circle", { cx: M + 2.5, cy: y0 - 2.6, r: 2.5, class: "accf" }, svg);
 type(svg, M + 10, y0, "TOP BROKERS", "caps", { fill: TONE.hi, weight: 750 });
 type(svg, W - M, y0, D.company.toUpperCase(), "caps", { fill: TONE.muted, weight: 700, anchor: "end" });
 type(svg, M, y0 + 46, "TOP 5", "hero", { size: 44, weight: 800, fill: GI });
-type(svg, M, y0 + 80, D.period === "day" ? "Brokers today" : "Brokers this week", "hero", { size: 26, weight: 600 });
+type(svg, M, y0 + 80, D.title || (D.period === "day" ? "Brokers today" : "Brokers this week"), "hero", { size: 26, weight: 600 });
 type(svg, M, y0 + 98, `By value traded · ${D.market} on the IDX`, "label", { fill: TONE.muted, size: 8.5 });
 
 // geometry: front face width, iso depth offset (dx up-right, dy up)
