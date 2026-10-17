@@ -88,9 +88,12 @@ def build_frames(stories, day):
 def build_combo(stories, day, theme="light"):
     """The posted story: ("news_combo", DATA) - up to five photo tiles (the lead big), each with its logo, ticker,
     category, one key number and the headline."""
+    from .news_flash import _sector
     tiles = []
     for s in stories[:5]:
-        tiles.append({"sym": s["sym"], "logo": _logo(s["sym"]), "photo": _photo(s.get("thumbnail")),
+        photo = _photo(s.get("thumbnail"))
+        tiles.append({"sym": s["sym"], "logo": _logo(s["sym"]), "photo": photo,
+                      "sector": None if photo else _sector(s["sym"]),  # the placeholder when there is no photo
                       "cat": _category(s.get("tags")), "bear": _direction(s.get("tags")) == "sell",
                       "headline": _headline(s["title"], s["sym"]), "full": s["title"],
                       "key": _key(_figures(s.get("structured_body")), s["sym"])})
