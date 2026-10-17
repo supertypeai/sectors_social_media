@@ -53,6 +53,11 @@ let tid = 0;
 // photo needs a dark scrim to be readable
 const PT = { ground: "rgb(20,18,16)", card: "rgb(39,36,33)", mid: "rgb(72,66,61)", hi: "rgb(239,236,231)", muted: "rgb(176,170,156)",
   head: "rgb(228,224,216)", gi: "rgb(178,210,185)", ti: "rgb(220,141,116)" };
+mk("style", {}, svg).textContent = `
+  #slide .tileicon path, #slide .tileicon polygon { fill: ${PT.card} !important; stroke: rgb(122,115,108) !important; }
+  #slide .tileicon .nf { fill: none !important; }
+  #slide .tileicon .acc { stroke: ${PT.gi} !important; }
+  #slide .tileicon circle { fill: rgb(122,115,108) !important; }`;
 function tile(s, x, y, w, h, big) {
   const id = `tl${++tid}`, defs = mk("defs", {}, svg), k = sane(s.key), ink = s.bear ? PT.ti : PT.gi;
   mk("rect", { x, y, width: w, height: h, rx: 10 }, mk("clipPath", { id }, defs));
@@ -66,6 +71,10 @@ function tile(s, x, y, w, h, big) {
   mk("rect", { x, y, width: w, height: h, style: `fill:${PT.card};stroke:none` }, g);
   if (s.photo) mk("image", { href: s.photo, x, y, width: w, height: h, preserveAspectRatio: "xMidYMid slice", style: "filter:saturate(.7) brightness(.78)" }, g);
   mk("rect", { x, y, width: w, height: h, style: `fill:url(#${id}g);stroke:none` }, g);
+  // no photo: the company's sector icon fills the tile (the news-flash placeholder), drawn over the scrim so it
+  // reads, in the tile's own dark palette (.tileicon above) whatever the story's theme, and kept off the text
+  if (!s.photo && s.sector) drawSectorIcon(mk("g", { class: "tileicon", opacity: 0.8 }, g), s.sector,
+    { cx: x + w * (big ? 0.72 : 0.7), cy: y + h * (big ? 0.4 : 0.38), S: big ? 1.55 : 1.0 });
   mk("rect", { x, y, width: w, height: h, rx: 10, style: `fill:none;stroke:${PT.mid};stroke-width:.8px` }, svg);
 
   // top: logo, ticker, category
