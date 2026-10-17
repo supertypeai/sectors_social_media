@@ -74,7 +74,7 @@ function tile(s, x, y, w, h, big) {
   // no photo: the company's sector icon fills the tile (the news-flash placeholder), drawn over the scrim so it
   // reads, in the tile's own dark palette (.tileicon above) whatever the story's theme, and kept off the text
   if (!s.photo && s.sector) drawSectorIcon(mk("g", { class: "tileicon", opacity: 0.8 }, g), s.sector,
-    { cx: x + w * (big ? 0.72 : 0.7), cy: y + h * (big ? 0.4 : 0.38), S: big ? 1.55 : 1.0 });
+    { cx: x + w * (big ? 0.72 : 0.72), cy: y + h * (big ? 0.42 : 0.42), S: big ? 1.4 : 0.72 });
   mk("rect", { x, y, width: w, height: h, rx: 10, style: `fill:none;stroke:${PT.mid};stroke-width:.8px` }, svg);
 
   // top: logo, ticker, category
