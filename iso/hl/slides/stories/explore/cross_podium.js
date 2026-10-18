@@ -19,7 +19,10 @@ const rows = O.slice(0, 4), n = rows.length, dx = 16, dy = 9, gap = n >= 4 ? 22 
 const fw = Math.min(58, (W - 2 * M - dx - (n - 1) * gap) / n);
 const totalW = n * fw + (n - 1) * gap + dx, x0 = (W - totalW) / 2, base = SAFE.bottom - 66;
 // heights: square-root scale so a 5% holder is still visible next to a 51% one; labels carry the exact %
-const vmax = Math.max(...rows.map((r) => r.pct)), Hmax = base - (y0 + 168), hv = (v) => Hmax * Math.sqrt(v / vmax);
+// The newcomer's column carries a stack above it (stake %, NEW pill, logo coin: ~90 px), so its top must stay low
+// enough for that stack to clear the "Who owns X now" title; the tallest column caps everyone else.
+const vmax = Math.max(...rows.map((r) => r.pct)), mvPct = (rows.find((r) => r.mover) || {}).pct || vmax;
+const Hmax = Math.min(base - (y0 + 168), (base - (y0 + 196)) / Math.sqrt(mvPct / vmax)), hv = (v) => Hmax * Math.sqrt(v / vmax);
 rows.forEach((r, i) => {
   const x = x0 + i * (fw + gap), h = hv(r.pct), top = base - h, mv = r.mover;
   const seg = (y1, y2, front, side) => {
@@ -32,9 +35,13 @@ rows.forEach((r, i) => {
     const hb = hv(S.before), mid = base - hb;
     seg(mid, base, "#6c746e", "#4b524d");
     seg(top, mid, G, "#5f7d66");
-    mk("line", { x1: x, y1: mid, x2: x + fw, y2: mid, style: `stroke:${TONE.ground};stroke-width:1.2px` }, svg);
-    type(svg, x + fw / 2, mid + 14, `${S.before.toFixed(1)}%`, "label", { fill: TONE.hi, size: 7, weight: 650, anchor: "middle" });
-    type(svg, x + fw / 2, mid + 23, "before", "label", { fill: TONE.hi, size: 6, anchor: "middle" });
+    // what they held before, labelled only when that part of the column is tall enough to hold the two lines
+    // (a holder who started from zero has no grey part, and the label would sit on their name under the floor)
+    if (hb >= 1) mk("line", { x1: x, y1: mid, x2: x + fw, y2: mid, style: `stroke:${TONE.ground};stroke-width:1.2px` }, svg);
+    if (hb >= 30) {
+      type(svg, x + fw / 2, mid + 14, `${S.before.toFixed(1)}%`, "label", { fill: TONE.hi, size: 7, weight: 650, anchor: "middle" });
+      type(svg, x + fw / 2, mid + 23, "before", "label", { fill: TONE.hi, size: 6, anchor: "middle" });
+    }
     type(svg, x + fw / 2, top + 16, `+${(S.now - S.before).toFixed(1)}`, "label", { fill: TONE.ground, size: 9, weight: 800, anchor: "middle" });
   } else {
     // the others fade back: dark, low-contrast ghosts with a faint outline
