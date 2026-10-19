@@ -30,22 +30,22 @@ from .post_routing import scheduled_at_from_policy
 # minute), just with Threads' own times - Threads posts at a different
 # time of day than the IG post for the same content.
 THREADS_CROSSPOST_POLICY: dict[str, dict] = {
-    # Redesigned feed carousels: cross-posted an hour after the IG post goes live.
+    # Redesigned feed carousels: cross-posted at the same time as the IG post (post_routing go-live times).
     "news-flash": {
         "caption_mode": "paraphrase", "label": None,
-        "schedule": {"target": "same_day", "hour": 17, "minute": 30},
+        "schedule": {"target": "same_day", "hour": 16, "minute": 30},
     },
     "weekly-calendar": {
         "caption_mode": "paraphrase", "label": None,
-        "schedule": {"target": "same_day", "hour": 14, "minute": 0},
+        "schedule": {"target": "same_day", "hour": 13, "minute": 0},
     },
     "insider-carousel": {
         "caption_mode": "paraphrase", "label": None,
-        "schedule": {"target": "same_day", "hour": 14, "minute": 0},
+        "schedule": {"target": "same_day", "hour": 13, "minute": 0},
     },
     "earnings-carousel": {
         "caption_mode": "paraphrase", "label": None,
-        "schedule": {"target": "same_day", "hour": 14, "minute": 0},
+        "schedule": {"target": "same_day", "hour": 13, "minute": 0},
     },
     # Retired IG types below: their IG post no longer queues, and a crosspost needs the IG row, so they stop too.
     "filings-becoming": {
