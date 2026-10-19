@@ -30,6 +30,7 @@ RENDER_JS = ROOT / "iso" / "hl" / "render.mjs"
 # kind → (group label, order on a row)
 GROUPS = {"div": "Dividend", "rights": "Rights", "split": "Split", "warrant": "Warrant", "agm": "AGM", "ipo": "IPO"}
 WHAT = {"Cum date": "cum", "Ex date": "ex", "Trading starts": "trading", "Trading ends": "last trading", "Subscription": "subscribe",
+        "Last day": "last day",  # rights: last day to trade AND to subscribe, when they are the same day
         "Meeting": "", "Matures": "matures", "Offering": "offering", "Listing": "listing"}
 
 
@@ -88,8 +89,13 @@ def collect(start, end):
         add(r["cum_date"], "rights", r["symbol"], "Cum date")
         add(r["ex_date"], "rights", r["symbol"], "Ex date")
         add(r["trading_period_start"], "rights", r["symbol"], "Trading starts")
-        add(r["trading_period_end"], "rights", r["symbol"], "Trading ends")
-        add(r["subscription_date"], "rights", r["symbol"], "Subscription")
+        # the last trading day and the subscription date fall on the same day in 97% of IDX rights issues (all 26
+        # in 2026): one "last day" row then, not two rows of the same tickers. Kept apart when they differ.
+        if _d(r["trading_period_end"]) and _d(r["trading_period_end"]) == _d(r["subscription_date"]):
+            add(r["trading_period_end"], "rights", r["symbol"], "Last day")
+        else:
+            add(r["trading_period_end"], "rights", r["symbol"], "Trading ends")
+            add(r["subscription_date"], "rights", r["symbol"], "Subscription")
 
     splits = _between("idx_stock_split", "symbol, split_ratio, cum_date, date", ["cum_date", "date"], start, end)
     for r in splits:
