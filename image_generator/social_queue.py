@@ -107,17 +107,20 @@ def upload_image_to_storage(
     from PIL import Image
 
     local_path = Path(local_path)
-    dest_name = dest_name or f"{local_path.stem}.jpg"
-
-    image = Image.open(local_path).convert("RGB")
-    buffer = BytesIO()
-    image.save(buffer, format="JPEG", quality=95)
-    payload = buffer.getvalue()
+    if local_path.suffix.lower() == ".mp4":
+        dest_name = Path(dest_name or local_path.name).with_suffix(".mp4").name
+        payload, content_type = local_path.read_bytes(), "video/mp4"
+    else:
+        dest_name = dest_name or f"{local_path.stem}.jpg"
+        image = Image.open(local_path).convert("RGB")
+        buffer = BytesIO()
+        image.save(buffer, format="JPEG", quality=95)
+        payload, content_type = buffer.getvalue(), "image/jpeg"
 
     result = mailroom.post(
         "/social/uploads",
         idempotency_key=f"upload:{hashlib.sha256(payload).hexdigest()}",
-        files={"file": (dest_name, payload, "image/jpeg")},
+        files={"file": (dest_name, payload, content_type)},
         data={"content_group": content_group} if content_group else None,
     )
     return result["url"]

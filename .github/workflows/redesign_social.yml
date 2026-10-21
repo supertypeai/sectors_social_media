@@ -84,7 +84,7 @@ jobs:
           FLAGS=""; PRE=""
           if [ "${{ github.event.inputs.draft }}" = "true" ]; then PRE="--draft"; echo "DRAFT: queued to Mailroom without a schedule"
           elif [ "${{ github.event.inputs.dry_run }}" != "false" ]; then FLAGS="--dry-run"; echo "DRY RUN: nothing will be queued"; fi
-          # the carousels also render the motion cover as an MP4 (artifact only; the queue takes images)
+          # the carousels post their motion cover as an MP4 video item (slide 1)
           case "${{ github.event.inputs.post }}" in insider-carousel|earnings-carousel) FLAGS="$FLAGS --video";; esac
           python -m image_generator.redesign_cli $PRE "${{ github.event.inputs.post }}" $FLAGS --out output/redesign
 
