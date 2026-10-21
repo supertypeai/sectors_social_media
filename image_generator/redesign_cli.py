@@ -18,8 +18,8 @@ Every command exits 0 without queuing when there is nothing new (no trading day,
 Dedup: the two carousels and story-crossing remember what they posted in state/posted_redesign.json (the
 workflow commits it back). The other posts are one per day / week by construction.
 
-Slide 1 of both carousels is the motion cover's last frame (insider_seats_motion / earn_bars_motion) as a still;
-the MP4 is rendered next to it with --video for a manual upload, since the Mailroom queue takes images only.
+Slide 1 of both carousels is the motion cover (insider_seats_motion / earn_bars_motion): with --video it is posted
+as an MP4 video item, without it as its last frame (a still).
 """
 import json
 import subprocess
@@ -45,7 +45,8 @@ def _today():
 
 
 def _render(kind, data, out, video=False):
-    """One slide through iso/hl/render.mjs; returns the PNG path (an MP4 is written beside it with video=True)."""
+    """One slide through iso/hl/render.mjs; returns the PNG path, or with video=True the MP4 rendered beside it
+    (the carousel's animated cover, posted as a video item)."""
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as f:
@@ -55,7 +56,8 @@ def _render(kind, data, out, video=False):
     Path(f.name).unlink(missing_ok=True)
     if run.returncode != 0:
         raise RuntimeError(f"render failed for {kind}:\n{run.stderr.strip() or run.stdout.strip()}")
-    return out
+    mp4 = out.with_suffix(".mp4")
+    return mp4 if video and mp4.exists() else out
 
 
 def _load_state():
