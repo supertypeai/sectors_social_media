@@ -821,6 +821,9 @@ def select_earnings_spikes(df, direction="spike", min_growth=0.60, max_growth=8.
                 continue
             if abs(base_e) < min_base_ratio * abs(late_e):
                 continue
+            # Revenue 10x off its year-ago level is a unit mix-up (e.g. USD vs IDR), not a result.
+            if base_r and late_r and not 0.1 <= late_r / base_r <= 10:
+                continue
             g = (late_e - base_e) / base_e
             if base_r and late_r and base_r > 0:
                 rev_growth = (late_r - base_r) / base_r
